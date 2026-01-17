@@ -2,11 +2,11 @@
 
 from collections import defaultdict
 from decimal import Decimal
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from src.mapper.account_mapper import AccountMapper
 from src.models.entry import JournalEntry
-from src.models.financials import BalanceSheet
+from src.models.financials import BalanceSheet, TracedValue
 
 
 class BalanceBuilder:
@@ -17,7 +17,7 @@ class BalanceBuilder:
 
     def build(self, entries: List[JournalEntry], year: int) -> BalanceSheet:
         """
-        Build balance sheet at year end.
+        Build balance sheet at year end with trace tracking.
 
         Balance = sum of all movements up to year end.
         Uses effective_year (source_year from filename if available) for correct
@@ -27,8 +27,9 @@ class BalanceBuilder:
         # This ensures correct cumulation when loading FECs from different years
         year_entries = [e for e in entries if e.effective_year <= year]
 
-        # Aggregate by category
+        # Aggregate by category + track traces
         totals: Dict[str, Decimal] = defaultdict(Decimal)
+        traces: Dict[str, TracedValue] = defaultdict(lambda: TracedValue())
 
         for entry in year_entries:
             category = self.mapper.get_balance_category(entry.account_num)
@@ -43,8 +44,17 @@ class BalanceBuilder:
 
                 totals[category] += amount
 
+                # Track this entry in the trace (Phase A)
+                entry_tuple: Tuple[str, str, str, Decimal] = (
+                    entry.date.isoformat(),
+                    entry.account_num,
+                    entry.label,
+                    amount
+                )
+                traces[category].add(amount, entry_tuple)
+
         # Build BalanceSheet object
-        return BalanceSheet(
+        bs = BalanceSheet(
             year=year,
             fixed_assets=totals.get("fixed_assets", Decimal("0")),
             inventory=totals.get("inventory", Decimal("0")),
@@ -57,6 +67,12 @@ class BalanceBuilder:
             payables=totals.get("payables", Decimal("0")),
             other_payables=totals.get("other_payables", Decimal("0")),
         )
+
+        # Set traces on the balance sheet (Phase A feature)
+        for category, traced_value in traces.items():
+            bs.set_traced(category, traced_value)
+
+        return bs
 
     def build_multi_year(self, entries: List[JournalEntry]) -> List[BalanceSheet]:
         """Build balance sheets for all years in the data.

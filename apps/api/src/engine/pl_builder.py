@@ -2,11 +2,11 @@
 
 from collections import defaultdict
 from decimal import Decimal
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from src.mapper.account_mapper import AccountMapper
 from src.models.entry import JournalEntry
-from src.models.financials import ProfitLoss
+from src.models.financials import ProfitLoss, TracedValue
 
 
 class PLBuilder:
@@ -16,12 +16,13 @@ class PLBuilder:
         self.mapper = mapper
 
     def build(self, entries: List[JournalEntry], year: int) -> ProfitLoss:
-        """Build P&L for a specific fiscal year."""
+        """Build P&L for a specific fiscal year with trace tracking."""
         # Filter entries for the year (use effective_year for consistency with balance sheet)
         year_entries = [e for e in entries if e.effective_year == year]
 
-        # Aggregate by category
+        # Aggregate by category + track traces
         totals: Dict[str, Decimal] = defaultdict(Decimal)
+        traces: Dict[str, TracedValue] = defaultdict(lambda: TracedValue())
 
         for entry in year_entries:
             category = self.mapper.get_pl_category(entry.account_num)
@@ -38,8 +39,17 @@ class PLBuilder:
 
                 totals[category] += amount
 
+                # Track this entry in the trace (Phase A)
+                entry_tuple: Tuple[str, str, str, Decimal] = (
+                    entry.date.isoformat(),
+                    entry.account_num,
+                    entry.label,
+                    amount
+                )
+                traces[category].add(amount, entry_tuple)
+
         # Build ProfitLoss object
-        return ProfitLoss(
+        pl = ProfitLoss(
             year=year,
             revenue=totals.get("revenue", Decimal("0")),
             other_revenue=totals.get("other_revenue", Decimal("0")),
@@ -55,6 +65,12 @@ class PLBuilder:
             exceptional_expense=totals.get("exceptional_expense", Decimal("0")),
             income_tax=totals.get("income_tax", Decimal("0")),
         )
+
+        # Set traces on the P&L (Phase A feature)
+        for category, traced_value in traces.items():
+            pl.set_traced(category, traced_value)
+
+        return pl
 
     def build_multi_year(self, entries: List[JournalEntry]) -> List[ProfitLoss]:
         """Build P&L for all years in the data."""
