@@ -504,6 +504,86 @@ async def export_pdf(session_id: str):
         media_type="application/pdf",
     )
 
+
+@app.get("/api/trace/{session_id}/{metric}/{year}")
+async def get_trace(session_id: str, metric: str, year: int):
+    """
+    Get trace (provenance) for a specific financial metric.
+    
+    Shows all journal entries that contributed to a P&L or Balance Sheet line item.
+    
+    Parameters:
+    - session_id: Session identifier from upload
+    - metric: Field name (e.g., 'revenue', 'purchases', 'receivables', 'payables')
+    - year: Fiscal year to retrieve trace for
+    
+    Returns:
+    {
+        "session_id": "...",
+        "metric": "revenue",
+        "year": 2024,
+        "value": 75000.0,
+        "entry_count": 2,
+        "entries": [
+            {"date": "2024-01-15", "account": "701000", "label": "Ventes", "amount": 50000.0},
+            ...
+        ]
+    }
+    """
+    with SESSIONS_LOCK:
+        session = SESSIONS.get(session_id)
+    if not session or "processed" not in session:
+        raise HTTPException(status_code=404, detail="Session not found or not processed.")
+    
+    processed = session["processed"]
+    
+    # Find the P&L or Balance sheet for the requested year
+    pl_list = processed.get("pl_list", [])
+    balance_list = processed.get("balance_list", [])
+    
+    pl_for_year = None
+    balance_for_year = None
+    
+    for pl in pl_list:
+        if pl.year == year:
+            pl_for_year = pl
+            break
+    
+    for bs in balance_list:
+        if bs.year == year:
+            balance_for_year = bs
+            break
+    
+    # Try to get trace from P&L first
+    if pl_for_year:
+        trace = pl_for_year.get_trace(metric)
+        if trace:
+            return JSONResponse(content={
+                "session_id": session_id,
+                "metric": metric,
+                "year": year,
+                "source": "P&L",
+                **trace
+            })
+    
+    # Try to get trace from Balance Sheet
+    if balance_for_year:
+        trace = balance_for_year.get_trace(metric)
+        if trace:
+            return JSONResponse(content={
+                "session_id": session_id,
+                "metric": metric,
+                "year": year,
+                "source": "Balance Sheet",
+                **trace
+            })
+    
+    # Metric not found
+    raise HTTPException(
+        status_code=404,
+        detail=f"Metric '{metric}' not found for year {year}. Available for this year: {[pl.year for pl in pl_list] if pl_list else [bs.year for bs in balance_list]}"
+    )
+
 @app.delete("/api/session/{session_id}")
 async def delete_session(session_id: str):
     """Clean up a session and its temporary files."""
