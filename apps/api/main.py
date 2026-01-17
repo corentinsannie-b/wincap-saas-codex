@@ -2,6 +2,7 @@
 """WincapAgent - Transform French FEC files into financial reports."""
 
 import json
+import logging
 import sys
 from collections import defaultdict
 from datetime import datetime
@@ -14,6 +15,29 @@ import click
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
 
+from config.settings import settings
+from src.cleanup import cleanup_old_sessions, get_temp_directory_stats
+from src.cli.output import (
+    console,
+    print_header,
+    print_section,
+    print_success,
+    print_error,
+    print_warning,
+    print_info,
+    print_financial_summary,
+    print_balance_sheet_summary,
+    print_kpi_summary,
+    print_file_info_table,
+    print_panel,
+)
+from src.config.constants import (
+    TIMESTAMP_FORMAT,
+    EXCEL_FILENAME_TEMPLATE,
+    PDF_FILENAME_TEMPLATE,
+    JSON_FILENAME_TEMPLATE,
+)
+from src.logging_config import setup_logging, get_logger
 from src.parser.fec_parser import FECParser
 from src.mapper.account_mapper import AccountMapper
 from src.engine.pl_builder import PLBuilder
@@ -25,6 +49,9 @@ from src.engine.variance_builder import VarianceBuilder
 from src.engine.detail_builder import DetailBuilder
 from src.export.excel_writer import ExcelWriter, export_dashboard_json
 from src.export.pdf_writer import PDFWriter
+
+# Setup logging
+logger = setup_logging(__name__)
 
 
 @click.group()
@@ -114,244 +141,370 @@ def generate(
     json: bool,
 ):
     """Generate financial reports from FEC file(s)."""
-    output_dir = Path(output)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        output_dir = Path(output)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-    click.echo(f"WincapAgent - Processing {len(fec_files)} file(s)...")
+        print_header("WINCAP - Report Generation")
+        logger.info(f"Starting processing of {len(fec_files)} file(s)")
 
-    # Parse FEC files
-    all_entries = []
-    for fec_file in fec_files:
-        click.echo(f"  Parsing: {fec_file}")
-        parser = FECParser(fec_file)
-        entries = parser.parse()
-        all_entries.extend(entries)
-        click.echo(f"    → {len(entries)} entries loaded")
+        # Parse FEC files
+        print_section("Parsing FEC Files", indent=2)
+        all_entries = []
+        file_info = []
 
-    if not all_entries:
-        click.echo("Error: No entries found in FEC file(s).", err=True)
-        sys.exit(1)
+        for fec_file in fec_files:
+            try:
+                print_info(f"Parsing: {fec_file}", indent=4)
+                parser = FECParser(fec_file)
+                entries = parser.parse()
+                all_entries.extend(entries)
+                logger.info(f"Successfully parsed {fec_file}: {len(entries)} entries")
+                print_success(f"{len(entries)} entries loaded", indent=6)
 
-    # Filter by years if specified
-    if years:
-        target_years = [int(y.strip()) for y in years.split(",")]
-        all_entries = [e for e in all_entries if e.fiscal_year in target_years]
-        click.echo(f"  Filtered to years: {target_years}")
+                file_info.append({
+                    "filename": Path(fec_file).name,
+                    "entries": len(entries),
+                    "years": sorted(set(e.fiscal_year for e in entries)),
+                    "encoding": parser.encoding,
+                })
+            except Exception as e:
+                logger.error(f"Failed to parse {fec_file}: {e}", exc_info=True)
+                print_error(f"Failed to parse {fec_file}: {e}", indent=4)
+                sys.exit(1)
 
-    # Basic trial balance check per year
-    year_totals = defaultdict(lambda: {"debit": Decimal("0"), "credit": Decimal("0")})
-    for entry in all_entries:
-        totals = year_totals[entry.fiscal_year]
-        totals["debit"] += entry.debit
-        totals["credit"] += entry.credit
+        if not all_entries:
+            print_error("No entries found in FEC file(s).")
+            logger.error("No entries found in any FEC file")
+            sys.exit(1)
 
-    for year, totals in sorted(year_totals.items()):
-        diff = totals["debit"] - totals["credit"]
-        if abs(diff) > Decimal("0.01"):
-            click.echo(f"  Warning: FY{year} imbalance (debit-credit): {diff}", err=True)
+        print_file_info_table(file_info)
 
-    # Initialize mapper
-    mapper = AccountMapper(config) if config else AccountMapper()
-    click.echo(f"  Account mapping loaded: {len(mapper.mapping)} prefixes")
+        # Filter by years if specified
+        if years:
+            target_years = [int(y.strip()) for y in years.split(",")]
+            all_entries = [e for e in all_entries if e.fiscal_year in target_years]
+            print_info(f"Filtered to years: {target_years}", indent=4)
+            logger.info(f"Filtered entries to years: {target_years}")
 
-    # Load QoE adjustments
-    qoe_adjustments = {}
-    if adjustments:
-        with open(adjustments, "r") as f:
-            adj_data = json.load(f)
-            for adj in adj_data.get("adjustments", []):
-                year = adj.get("year")
-                label = adj.get("label")
-                amount = Decimal(str(adj.get("amount", 0)))
-                if year not in qoe_adjustments:
-                    qoe_adjustments[year] = {}
-                qoe_adjustments[year][label] = amount
-        click.echo(f"  QoE adjustments loaded: {len(qoe_adjustments)} year(s)")
+        # Basic trial balance check per year
+        print_section("Validating Trial Balance", indent=2)
+        year_totals = defaultdict(lambda: {"debit": Decimal("0"), "credit": Decimal("0")})
+        for entry in all_entries:
+            totals = year_totals[entry.fiscal_year]
+            totals["debit"] += entry.debit
+            totals["credit"] += entry.credit
 
-    # Build financial statements
-    click.echo("\nBuilding financial statements...")
+        for year, totals in sorted(year_totals.items()):
+            diff = totals["debit"] - totals["credit"]
+            if abs(diff) > Decimal("0.01"):
+                print_warning(f"FY{year} imbalance (debit-credit): {diff}", indent=4)
+                logger.warning(f"FY{year} trial balance imbalance: {diff}")
+            else:
+                print_success(f"FY{year} trial balance: balanced", indent=4)
 
-    pl_builder = PLBuilder(mapper)
-    pl_list = pl_builder.build_multi_year(all_entries)
-    click.echo(f"  P&L: {len(pl_list)} year(s)")
+        # Initialize mapper
+        print_section("Loading Account Mapping", indent=2)
+        mapper = AccountMapper(config) if config else AccountMapper()
+        print_success(f"Account mapping loaded: {len(mapper.mapping)} prefixes", indent=4)
+        logger.info(f"Account mapping loaded: {len(mapper.mapping)} prefixes")
 
-    balance_builder = BalanceBuilder(mapper)
-    balance_list = balance_builder.build_multi_year(all_entries)
-    click.echo(f"  Balance: {len(balance_list)} year(s)")
+        # Load QoE adjustments
+        qoe_adjustments = {}
+        if adjustments:
+            try:
+                with open(adjustments, "r") as f:
+                    adj_data = json.load(f)
+                    for adj in adj_data.get("adjustments", []):
+                        year = adj.get("year")
+                        label = adj.get("label")
+                        amount = Decimal(str(adj.get("amount", 0)))
+                        if year not in qoe_adjustments:
+                            qoe_adjustments[year] = {}
+                        qoe_adjustments[year][label] = amount
+                print_success(f"QoE adjustments loaded: {len(qoe_adjustments)} year(s)", indent=4)
+                logger.info(f"QoE adjustments loaded for {len(qoe_adjustments)} years")
+            except Exception as e:
+                print_warning(f"Failed to load QoE adjustments: {e}", indent=4)
+                logger.warning(f"QoE adjustments loading failed: {e}")
 
-    kpi_calculator = KPICalculator(qoe_adjustments, vat_rate=Decimal(str(vat_rate)))
-    kpis_list = kpi_calculator.calculate_multi_year(pl_list, balance_list)
-    click.echo(f"  KPIs: {len(kpis_list)} year(s)")
+        # Build financial statements
+        print_section("Building Financial Statements", indent=2)
 
-    # Build additional analysis
-    cashflow_builder = CashFlowBuilder()
-    cashflows = cashflow_builder.build_multi_year(pl_list, balance_list)
-    click.echo(f"  Cash-Flow: {len(cashflows)} year(s)")
+        pl_builder = PLBuilder(mapper)
+        pl_list = pl_builder.build_multi_year(all_entries)
+        print_success(f"P&L statements: {len(pl_list)} year(s)", indent=4)
 
-    monthly_builder = MonthlyBuilder(mapper)
-    monthly_revenue = monthly_builder.build_monthly_revenue(all_entries)
-    monthly_data = {"revenue": monthly_revenue}
+        balance_builder = BalanceBuilder(mapper)
+        balance_list = balance_builder.build_multi_year(all_entries)
+        print_success(f"Balance sheets: {len(balance_list)} year(s)", indent=4)
 
-    # Add detailed monthly analysis if requested
-    if detailed:
-        monthly_data["costs"] = monthly_builder.build_monthly_costs(all_entries)
-        monthly_data["ebitda"] = monthly_builder.build_monthly_ebitda(all_entries)
-        monthly_data["quarterly"] = monthly_builder.build_quarterly_summary(monthly_revenue)
-        monthly_data["cumulative"] = monthly_builder.build_cumulative_revenue(monthly_revenue)
-        monthly_data["seasonality"] = monthly_builder.get_seasonality_index(monthly_revenue)
-        click.echo(f"  Monthly (detailed): {len(monthly_revenue)} year(s)")
-    else:
-        click.echo(f"  Monthly: {len(monthly_revenue)} year(s)")
+        kpi_calculator = KPICalculator(qoe_adjustments, vat_rate=Decimal(str(vat_rate)))
+        kpis_list = kpi_calculator.calculate_multi_year(pl_list, balance_list)
+        print_success(f"KPI calculations: {len(kpis_list)} year(s)", indent=4)
 
-    variance_data = {}
-    if len(pl_list) >= 2:
-        variance_builder = VarianceBuilder()
-        variance_data = {
-            "cost_breakdown": variance_builder.build_cost_breakdown_variance(pl_list[-2], pl_list[-1]),
-            "ebitda_bridge": variance_builder.build_ebitda_bridge(pl_list[-2], pl_list[-1]),
-        }
+        # Build additional analysis
+        cashflow_builder = CashFlowBuilder()
+        cashflows = cashflow_builder.build_multi_year(pl_list, balance_list)
+        print_success(f"Cash flow statements: {len(cashflows)} year(s)", indent=4)
 
-        # Add detailed variance analysis if requested
+        monthly_builder = MonthlyBuilder(mapper)
+        monthly_revenue = monthly_builder.build_monthly_revenue(all_entries)
+        monthly_data = {"revenue": monthly_revenue}
+
+        # Add detailed monthly analysis if requested
         if detailed:
-            variance_data["pl_variance"] = variance_builder.build_pl_variance(pl_list[-2], pl_list[-1])
-            variance_data["revenue_bridge"] = variance_builder.build_revenue_bridge(
-                pl_list[-2], pl_list[-1], {}, {}  # TODO: Get actual client data when available
-            )
-            variance_data["kpi_evolution"] = variance_builder.build_kpi_evolution(kpis_list)
-            click.echo(f"  Variances (detailed): FY{pl_list[-2].year} → FY{pl_list[-1].year}")
+            monthly_data["costs"] = monthly_builder.build_monthly_costs(all_entries)
+            monthly_data["ebitda"] = monthly_builder.build_monthly_ebitda(all_entries)
+            monthly_data["quarterly"] = monthly_builder.build_quarterly_summary(monthly_revenue)
+            monthly_data["cumulative"] = monthly_builder.build_cumulative_revenue(monthly_revenue)
+            monthly_data["seasonality"] = monthly_builder.get_seasonality_index(monthly_revenue)
+            print_success(f"Monthly analysis (detailed): {len(monthly_revenue)} year(s)", indent=4)
+            logger.info(f"Detailed monthly analysis for {len(monthly_revenue)} years")
         else:
-            click.echo(f"  Variances: FY{pl_list[-2].year} → FY{pl_list[-1].year}")
+            print_success(f"Monthly summary: {len(monthly_revenue)} year(s)", indent=4)
+            logger.info(f"Basic monthly summary for {len(monthly_revenue)} years")
 
-    # Build BFR evolution analysis
-    bfr_evolution = balance_builder.compute_bfr_evolution(balance_list)
-    variance_data["bfr_evolution"] = bfr_evolution
+        variance_data = {}
+        if len(pl_list) >= 2:
+            variance_builder = VarianceBuilder()
+            variance_data = {
+                "cost_breakdown": variance_builder.build_cost_breakdown_variance(pl_list[-2], pl_list[-1]),
+                "ebitda_bridge": variance_builder.build_ebitda_bridge(pl_list[-2], pl_list[-1]),
+            }
 
-    # Build P&L variations
-    if len(pl_list) >= 2:
-        pl_variations = pl_builder.compute_variations(pl_list)
-        variance_data["pl_variations"] = pl_variations
+            # Add detailed variance analysis if requested
+            if detailed:
+                variance_data["pl_variance"] = variance_builder.build_pl_variance(pl_list[-2], pl_list[-1])
+                variance_data["revenue_bridge"] = variance_builder.build_revenue_bridge(
+                    pl_list[-2], pl_list[-1], {}, {}
+                )
+                variance_data["kpi_evolution"] = variance_builder.build_kpi_evolution(kpis_list)
+                print_success(f"Variance analysis (detailed): FY{pl_list[-2].year} → FY{pl_list[-1].year}", indent=4)
+                logger.info(f"Detailed variance analysis")
+            else:
+                print_success(f"Variance analysis: FY{pl_list[-2].year} → FY{pl_list[-1].year}", indent=4)
+                logger.info(f"Basic variance analysis")
 
-    # Build KPI synthesis and QoE bridge
-    kpi_synthesis = kpi_calculator.build_synthesis_table(kpis_list)
-    variance_data["kpi_synthesis"] = kpi_synthesis
-    if kpis_list:
-        variance_data["qoe_bridge"] = kpi_calculator.build_qoe_bridge(kpis_list[-1])
+        # Build BFR evolution analysis
+        bfr_evolution = balance_builder.compute_bfr_evolution(balance_list)
+        variance_data["bfr_evolution"] = bfr_evolution
 
-    # Build account-level details if requested
-    detail_data = {}
-    if detailed:
-        detail_builder = DetailBuilder(mapper)
-        detail_data["account_summary"] = detail_builder.build_account_summary(all_entries)
-        # Use all-years methods that don't require year parameter
-        detail_data["top_accounts"] = detail_builder.build_top_accounts_all_years(all_entries, top_n=20)
-        detail_data["category_breakdown"] = detail_builder.build_category_breakdown_all_years(all_entries)
-        # Build per-year details for the most recent year
-        years = sorted(set(e.fiscal_year for e in all_entries))
-        latest_year = years[-1] if years else None
-        if latest_year:
-            detail_data["pl_detail"] = detail_builder.build_pl_detail(all_entries, latest_year)
-            detail_data["balance_detail"] = detail_builder.build_balance_detail(all_entries, latest_year)
-        click.echo(f"  Account details: {len(detail_data['top_accounts'])} top accounts")
+        # Build P&L variations
+        if len(pl_list) >= 2:
+            pl_variations = pl_builder.compute_variations(pl_list)
+            variance_data["pl_variations"] = pl_variations
 
-    # Generate outputs
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Build KPI synthesis and QoE bridge
+        kpi_synthesis = kpi_calculator.build_synthesis_table(kpis_list)
+        variance_data["kpi_synthesis"] = kpi_synthesis
+        if kpis_list:
+            variance_data["qoe_bridge"] = kpi_calculator.build_qoe_bridge(kpis_list[-1])
 
-    if excel:
-        click.echo("\nGenerating Excel Databook...")
-        excel_writer = ExcelWriter(company_name)
-        excel_path = output_dir / f"Databook_{timestamp}.xlsx"
-        excel_writer.generate(
-            pl_list, balance_list, kpis_list, excel_path,
-            entries=all_entries,
-            cashflows=cashflows,
-            monthly_data=monthly_data,
-            variance_data=variance_data,
-            detail_data=detail_data if detailed else None,
-        )
-        click.echo(f"  → {excel_path}")
+        # Build account-level details if requested
+        detail_data = {}
+        if detailed:
+            detail_builder = DetailBuilder(mapper)
+            detail_data["account_summary"] = detail_builder.build_account_summary(all_entries)
+            detail_data["top_accounts"] = detail_builder.build_top_accounts_all_years(all_entries, top_n=20)
+            detail_data["category_breakdown"] = detail_builder.build_category_breakdown_all_years(all_entries)
+            years = sorted(set(e.fiscal_year for e in all_entries))
+            latest_year = years[-1] if years else None
+            if latest_year:
+                detail_data["pl_detail"] = detail_builder.build_pl_detail(all_entries, latest_year)
+                detail_data["balance_detail"] = detail_builder.build_balance_detail(all_entries, latest_year)
+            print_success(f"Account details: {len(detail_data.get('top_accounts', []))} top accounts", indent=4)
+            logger.info(f"Detailed account analysis")
 
-    if pdf:
-        click.echo("\nGenerating PDF Report...")
-        try:
-            pdf_writer = PDFWriter(company_name)
-            pdf_path = output_dir / f"Rapport_DD_{timestamp}.pdf"
-            pdf_writer.generate(pl_list, balance_list, kpis_list, pdf_path)
-            click.echo(f"  → {pdf_path}")
-        except ImportError as e:
-            click.echo(f"  Warning: PDF generation skipped - {e}", err=True)
+        # Generate outputs
+        print_section("Generating Reports", indent=2)
+        timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
 
-    if json:
-        click.echo("\nGenerating Dashboard JSON...")
-        json_path = output_dir / f"dashboard_data_{timestamp}.json"
-        export_dashboard_json(
-            pl_list, balance_list, kpis_list,
-            company_name, json_path,
-            monthly_data=monthly_data,
-            variance_data=variance_data,
-        )
-        click.echo(f"  → {json_path}")
+        if excel:
+            try:
+                excel_writer = ExcelWriter(company_name)
+                excel_path = output_dir / EXCEL_FILENAME_TEMPLATE.format(timestamp=timestamp)
+                excel_writer.generate(
+                    pl_list, balance_list, kpis_list, excel_path,
+                    entries=all_entries,
+                    cashflows=cashflows,
+                    monthly_data=monthly_data,
+                    variance_data=variance_data,
+                    detail_data=detail_data if detailed else None,
+                )
+                print_success(f"Excel Databook: {excel_path.name}", indent=4)
+                logger.info(f"Excel exported: {excel_path}")
+            except Exception as e:
+                print_error(f"Excel export failed: {e}", indent=4)
+                logger.error(f"Excel export failed: {e}", exc_info=True)
 
-    # Print summary
-    click.echo("\n" + "=" * 50)
-    click.echo("SUMMARY")
-    click.echo("=" * 50)
+        if pdf:
+            try:
+                pdf_writer = PDFWriter(company_name)
+                pdf_path = output_dir / PDF_FILENAME_TEMPLATE.format(timestamp=timestamp)
+                pdf_writer.generate(pl_list, balance_list, kpis_list, pdf_path)
+                print_success(f"PDF Report: {pdf_path.name}", indent=4)
+                logger.info(f"PDF exported: {pdf_path}")
+            except ImportError as e:
+                print_warning(f"PDF generation skipped: {e}", indent=4)
+                logger.warning(f"PDF generation not available: {e}")
+            except Exception as e:
+                print_error(f"PDF export failed: {e}", indent=4)
+                logger.error(f"PDF export failed: {e}", exc_info=True)
 
-    for pl in pl_list:
-        click.echo(f"\nFY{pl.year}:")
-        click.echo(f"  CA: {float(pl.revenue/1000):,.0f} k€")
-        click.echo(f"  EBITDA: {float(pl.ebitda/1000):,.0f} k€ ({float(pl.ebitda_margin):.1f}%)")
-        click.echo(f"  Résultat Net: {float(pl.net_income/1000):,.0f} k€")
+        if json:
+            try:
+                json_path = output_dir / JSON_FILENAME_TEMPLATE.format(timestamp=timestamp)
+                export_dashboard_json(
+                    pl_list, balance_list, kpis_list,
+                    company_name, json_path,
+                    monthly_data=monthly_data,
+                    variance_data=variance_data,
+                )
+                print_success(f"JSON Data: {json_path.name}", indent=4)
+                logger.info(f"JSON exported: {json_path}")
+            except Exception as e:
+                print_error(f"JSON export failed: {e}", indent=4)
+                logger.error(f"JSON export failed: {e}", exc_info=True)
 
-    click.echo("\nDone!")
+        # Display financial summary
+        print_header("FINANCIAL SUMMARY")
+        print_financial_summary(pl_list)
+
+        if balance_list:
+            print_balance_sheet_summary(balance_list)
+
+        if kpis_list:
+            print_kpi_summary(kpis_list)
+
+        # Cleanup temporary files
+        cleanup_old_sessions()
+
+        print_section("Processing Complete", width=50)
+        logger.info("Processing completed successfully")
+
+    except KeyboardInterrupt:
+        print_error("\nProcessing interrupted by user")
+        logger.warning("Processing interrupted by user")
+        sys.exit(5)
+    except Exception as e:
+        print_error(f"Unexpected error: {e}")
+        logger.error(f"Unexpected error during processing: {e}", exc_info=True)
+        sys.exit(1)
 
 
 @cli.command()
 @click.argument("fec_file", type=click.Path(exists=True))
 def analyze(fec_file: str):
     """Quick analysis of a FEC file without generating reports."""
-    click.echo(f"Analyzing: {fec_file}\n")
+    try:
+        print_header("FEC File Analysis")
+        print_info(f"Analyzing: {fec_file}\n", indent=2)
+        logger.info(f"Starting FEC file analysis: {fec_file}")
 
-    parser = FECParser(fec_file)
-    entries = parser.parse()
+        parser = FECParser(fec_file)
+        entries = parser.parse()
 
-    click.echo(f"Total entries: {len(entries)}")
-    click.echo(f"Years: {parser.years}")
-    click.echo(f"Encoding: {parser._encoding}")
-    click.echo(f"Delimiter: {repr(parser._delimiter)}")
+        # Basic information
+        print_section("File Information", indent=2)
+        console.print(f"  Total entries: [cyan]{len(entries):,}[/cyan]")
+        console.print(f"  Fiscal years: [magenta]{sorted(set(e.fiscal_year for e in entries))}[/magenta]")
+        console.print(f"  Encoding: [yellow]{parser.encoding}[/yellow]")
+        console.print(f"  Delimiter: [yellow]{repr(parser.delimiter)}[/yellow]")
+        logger.info(f"File info: {len(entries)} entries, encoding={parser.encoding}")
 
-    # Account classes distribution
-    click.echo("\nAccount classes:")
-    class_counts = {}
-    for entry in entries:
-        cls = entry.account_class
-        class_counts[cls] = class_counts.get(cls, 0) + 1
+        # Account classes distribution
+        print_section("Account Distribution", indent=2)
+        class_counts = {}
+        class_totals = {}
+        for entry in entries:
+            cls = entry.account_class
+            class_counts[cls] = class_counts.get(cls, 0) + 1
+            class_totals[cls] = class_totals.get(cls, Decimal("0")) + (entry.debit - entry.credit)
 
-    for cls in sorted(class_counts.keys()):
-        click.echo(f"  Classe {cls}: {class_counts[cls]} entries")
+        from rich.table import Table
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("Account Class", style="cyan")
+        table.add_column("Entry Count", justify="right")
+        table.add_column("Total Amount", justify="right")
 
-    # Sample entries
-    click.echo("\nSample entries:")
-    for entry in entries[:5]:
-        click.echo(f"  {entry.date} | {entry.account_num} | {entry.label[:30]} | D:{entry.debit} C:{entry.credit}")
+        for cls in sorted(class_counts.keys()):
+            table.add_row(
+                f"Class {cls}",
+                str(class_counts[cls]),
+                f"{float(class_totals[cls]):,.2f} €"
+            )
+
+        console.print(table)
+        logger.info(f"Account distribution: {len(class_counts)} classes")
+
+        # Sample entries
+        print_section("Sample Entries (First 5)", indent=2)
+        sample_table = Table(show_header=True, header_style="bold cyan")
+        sample_table.add_column("Date", style="cyan")
+        sample_table.add_column("Account", style="magenta")
+        sample_table.add_column("Description")
+        sample_table.add_column("Debit", justify="right")
+        sample_table.add_column("Credit", justify="right")
+
+        for entry in entries[:5]:
+            sample_table.add_row(
+                str(entry.date),
+                entry.account_num,
+                entry.label[:40],
+                f"{float(entry.debit):,.2f}" if entry.debit > 0 else "",
+                f"{float(entry.credit):,.2f}" if entry.credit > 0 else "",
+            )
+
+        console.print(sample_table)
+        logger.info(f"Analysis completed successfully")
+
+    except Exception as e:
+        print_error(f"Analysis failed: {e}")
+        logger.error(f"FEC analysis failed: {e}", exc_info=True)
+        sys.exit(1)
 
 
 @cli.command()
 def accounts():
-    """List available account mappings."""
-    mapper = AccountMapper()
+    """List available account mappings (French PCG)."""
+    try:
+        print_header("Account Mappings (PCG)", width=50)
 
-    click.echo("Account Mappings (PCG → Category):\n")
+        mapper = AccountMapper()
+        print_info(f"Loaded {len(mapper.mapping)} account prefixes", indent=2)
+        logger.info(f"Displaying {len(mapper.mapping)} account mappings")
 
-    categories = {}
-    for prefix, category in sorted(mapper.mapping.items(), key=lambda x: x[0]):
-        if category not in categories:
-            categories[category] = []
-        categories[category].append(prefix)
+        categories = {}
+        for prefix, category in sorted(mapper.mapping.items(), key=lambda x: x[0]):
+            if category not in categories:
+                categories[category] = []
+            categories[category].append(prefix)
 
-    for category, prefixes in sorted(categories.items()):
-        click.echo(f"{category}:")
-        click.echo(f"  Prefixes: {', '.join(sorted(prefixes))}")
-        click.echo()
+        # Display as table
+        from rich.table import Table
+        table = Table(title="Account Categories", show_header=True, header_style="bold cyan")
+        table.add_column("Category", style="cyan")
+        table.add_column("Account Prefixes", style="magenta")
+        table.add_column("Count", justify="right")
+
+        for category, prefixes in sorted(categories.items()):
+            sorted_prefixes = sorted(prefixes)
+            table.add_row(
+                category,
+                ", ".join(sorted_prefixes),
+                str(len(sorted_prefixes)),
+            )
+
+        console.print(table)
+
+        print_info(f"Total categories: {len(categories)}", indent=2)
+        logger.info(f"Displayed {len(categories)} account categories")
+
+    except Exception as e:
+        print_error(f"Failed to display accounts: {e}")
+        logger.error(f"Account listing failed: {e}", exc_info=True)
+        sys.exit(1)
 
 
 @cli.command()
