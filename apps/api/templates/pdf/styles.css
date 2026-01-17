@@ -1,0 +1,243 @@
+/* FEC2Report PDF Styles - Wincap-inspired */
+
+@page {
+    size: A4;
+    margin: 2cm;
+}
+
+body {
+    font-family: 'Calibri', 'Helvetica Neue', Arial, sans-serif;
+    font-size: 10pt;
+    line-height: 1.4;
+    color: #333;
+}
+
+/* Cover Page */
+.cover-page {
+    page-break-after: always;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    position: relative;
+}
+
+.cover-content {
+    padding: 40px;
+}
+
+.company-name {
+    font-size: 28pt;
+    color: #1F4E79;
+    margin-bottom: 20px;
+    font-weight: bold;
+}
+
+.report-title {
+    font-size: 18pt;
+    color: #2E75B6;
+    margin-bottom: 40px;
+}
+
+.draft-watermark {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-45deg);
+    font-size: 72pt;
+    color: rgba(200, 200, 200, 0.3);
+    font-weight: bold;
+    z-index: -1;
+}
+
+.date {
+    font-size: 12pt;
+    color: #666;
+    margin-top: 60px;
+}
+
+/* Page breaks */
+.page {
+    page-break-before: always;
+}
+
+.toc-page {
+    page-break-before: always;
+}
+
+/* Table of Contents */
+.toc {
+    list-style: decimal;
+    padding-left: 30px;
+}
+
+.toc li {
+    margin: 10px 0;
+    font-size: 12pt;
+}
+
+.toc a {
+    color: #1F4E79;
+    text-decoration: none;
+}
+
+/* Headings */
+h2 {
+    color: #1F4E79;
+    font-size: 16pt;
+    border-bottom: 2px solid #2E75B6;
+    padding-bottom: 8px;
+    margin-bottom: 20px;
+}
+
+h3 {
+    color: #2E75B6;
+    font-size: 12pt;
+    margin-top: 20px;
+    margin-bottom: 10px;
+}
+
+/* Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+    font-size: 9pt;
+}
+
+th {
+    background-color: #2E75B6;
+    color: white;
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: bold;
+}
+
+td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #ddd;
+}
+
+tr:nth-child(even) {
+    background-color: #f8f8f8;
+}
+
+.number {
+    text-align: right;
+    font-family: 'Consolas', 'Monaco', monospace;
+}
+
+/* Special rows */
+.total-row {
+    background-color: #E8E8E8 !important;
+    font-weight: bold;
+}
+
+.total-row td {
+    border-top: 2px solid #1F4E79;
+    border-bottom: 2px solid #1F4E79;
+}
+
+.section-row {
+    background-color: #BDD7EE !important;
+    font-weight: bold;
+    color: #1F4E79;
+}
+
+/* Positive/Negative values */
+.positive {
+    color: #70AD47;
+}
+
+.negative {
+    color: #C00000;
+}
+
+/* Synthesis Table */
+.synthesis-table {
+    margin: 20px 0;
+}
+
+.synthesis-table th {
+    background-color: #1F4E79;
+}
+
+/* KPI Table */
+.kpi-table {
+    width: auto;
+    margin: 20px 0;
+}
+
+.kpi-table th,
+.kpi-table td {
+    padding: 8px 15px;
+}
+
+/* Key Figures Box */
+.key-figures {
+    background-color: #f5f5f5;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 15px;
+    margin: 20px 0;
+}
+
+/* Observations */
+.observations {
+    margin: 20px 0;
+}
+
+.observations ul {
+    padding-left: 20px;
+}
+
+.observations li {
+    margin: 8px 0;
+}
+
+/* Charts */
+.chart {
+    text-align: center;
+    margin: 20px 0;
+}
+
+.chart img {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Footer */
+.footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 8pt;
+    color: #999;
+    padding: 10px;
+    border-top: 1px solid #ddd;
+}
+
+/* Financial Table specific */
+.financial-table th:first-child,
+.financial-table td:first-child {
+    text-align: left;
+    width: 40%;
+}
+
+.financial-table th:not(:first-child),
+.financial-table td:not(:first-child) {
+    text-align: right;
+    width: 15%;
+}
+
+/* DSO/DPO section */
+.dso-dpo {
+    margin-top: 30px;
+    padding: 15px;
+    background-color: #f5f5f5;
+    border-radius: 5px;
+}

@@ -1,0 +1,37 @@
+[project]
+name = "wincap-api"
+version = "1.0.0"
+description = "Wincap Financial Due Diligence API - Transform French FEC files into reports"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0",
+    "openpyxl>=3.1",
+    "jinja2>=3.1",
+    "pyyaml>=6.0",
+    "click>=8.1",
+    "weasyprint>=60.0",
+    "matplotlib>=3.8",
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "python-multipart>=0.0.6",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "black", "ruff", "mypy"]
+
+[project.scripts]
+wincap = "main:cli"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I"]

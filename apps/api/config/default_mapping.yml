@@ -1,0 +1,226 @@
+# PCG (Plan Comptable Général) Account Mapping
+# Maps account prefixes to financial categories
+
+# ============================================
+# COMPTE DE RÉSULTAT (P&L)
+# ============================================
+
+revenue:
+  # Classe 7 - Produits
+  - prefix: "70"      # Ventes de produits fabriqués, prestations, marchandises
+  - prefix: "701"     # Ventes de produits finis
+  - prefix: "706"     # Prestations de services
+  - prefix: "707"     # Ventes de marchandises
+  - prefix: "708"     # Produits des activités annexes
+  - prefix: "709"     # RRR accordés (négatif)
+
+other_revenue:
+  - prefix: "71"      # Production stockée
+  - prefix: "72"      # Production immobilisée
+  - prefix: "74"      # Subventions d'exploitation
+  - prefix: "75"      # Autres produits de gestion courante
+  - prefix: "78"      # Reprises sur amort. et provisions
+  - prefix: "79"      # Transferts de charges
+
+purchases:
+  # Classe 6 - Charges
+  - prefix: "60"      # Achats
+  - prefix: "601"     # Achats de matières premières
+  - prefix: "602"     # Achats d'autres approvisionnements
+  - prefix: "604"     # Achats d'études et prestations
+  - prefix: "606"     # Achats non stockés
+  - prefix: "607"     # Achats de marchandises
+  - prefix: "609"     # RRR obtenus (négatif)
+
+external_charges:
+  - prefix: "61"      # Services extérieurs
+  - prefix: "611"     # Sous-traitance générale
+  - prefix: "612"     # Redevances de crédit-bail
+  - prefix: "613"     # Locations
+  - prefix: "614"     # Charges locatives
+  - prefix: "615"     # Entretien et réparations
+  - prefix: "616"     # Primes d'assurance
+  - prefix: "617"     # Études et recherches
+  - prefix: "618"     # Divers
+  - prefix: "62"      # Autres services extérieurs
+  - prefix: "621"     # Personnel extérieur
+  - prefix: "622"     # Rémunérations d'intermédiaires
+  - prefix: "623"     # Publicité, publications, relations publiques
+  - prefix: "624"     # Transports de biens et collectifs
+  - prefix: "625"     # Déplacements, missions, réceptions
+  - prefix: "626"     # Frais postaux et de télécommunications
+  - prefix: "627"     # Services bancaires
+  - prefix: "628"     # Divers
+
+taxes:
+  - prefix: "63"      # Impôts, taxes et versements assimilés
+  - prefix: "631"     # Impôts, taxes sur rémunérations
+  - prefix: "633"     # Impôts, taxes sur rémunérations (autres)
+  - prefix: "635"     # Autres impôts, taxes (CFE, CVAE)
+  - prefix: "637"     # Autres impôts, taxes
+
+personnel:
+  - prefix: "64"      # Charges de personnel
+  - prefix: "641"     # Rémunérations du personnel
+  - prefix: "644"     # Rémunérations du dirigeant
+  - prefix: "645"     # Charges de sécurité sociale
+  - prefix: "646"     # Cotisations sociales personnelles
+  - prefix: "647"     # Autres charges sociales
+  - prefix: "648"     # Autres charges de personnel
+
+other_charges:
+  - prefix: "65"      # Autres charges de gestion courante
+  - prefix: "651"     # Redevances pour concessions, brevets, licences
+  - prefix: "654"     # Pertes sur créances irrécouvrables
+  - prefix: "658"     # Charges diverses de gestion courante
+
+depreciation:
+  - prefix: "68"      # Dotations aux amortissements et provisions
+  - prefix: "681"     # Dotations aux amortissements
+  - prefix: "6811"    # Dotations aux amort. sur immobilisations
+  - prefix: "686"     # Dotations aux provisions financières
+  - prefix: "687"     # Dotations aux provisions exceptionnelles
+
+financial_expense:
+  - prefix: "66"      # Charges financières
+  - prefix: "661"     # Charges d'intérêts
+  - prefix: "664"     # Pertes sur créances liées à des participations
+  - prefix: "665"     # Escomptes accordés
+  - prefix: "666"     # Pertes de change
+  - prefix: "667"     # Charges nettes sur cessions de VMP
+  - prefix: "668"     # Autres charges financières
+
+financial_income:
+  - prefix: "76"      # Produits financiers
+  - prefix: "761"     # Produits de participations
+  - prefix: "762"     # Produits des autres immobilisations financières
+  - prefix: "763"     # Revenus des autres créances
+  - prefix: "764"     # Revenus des VMP
+  - prefix: "765"     # Escomptes obtenus
+  - prefix: "766"     # Gains de change
+  - prefix: "767"     # Produits nets sur cessions de VMP
+  - prefix: "768"     # Autres produits financiers
+
+exceptional_expense:
+  - prefix: "67"      # Charges exceptionnelles
+  - prefix: "671"     # Charges except. sur opérations de gestion
+  - prefix: "675"     # Valeurs comptables des éléments d'actif cédés
+  - prefix: "678"     # Autres charges exceptionnelles
+
+exceptional_income:
+  - prefix: "77"      # Produits exceptionnels
+  - prefix: "771"     # Produits except. sur opérations de gestion
+  - prefix: "775"     # Produits des cessions d'éléments d'actif
+  - prefix: "778"     # Autres produits exceptionnels
+
+income_tax:
+  - prefix: "69"      # Impôts sur les bénéfices
+  - prefix: "695"     # Impôts sur les bénéfices
+
+# ============================================
+# BILAN (Balance Sheet)
+# ============================================
+
+fixed_assets:
+  # Classe 2 - Immobilisations
+  - prefix: "20"      # Immobilisations incorporelles
+  - prefix: "21"      # Immobilisations corporelles
+  - prefix: "22"      # Immobilisations mises en concession
+  - prefix: "23"      # Immobilisations en cours
+  - prefix: "26"      # Participations
+  - prefix: "27"      # Autres immobilisations financières
+  - prefix: "28"      # Amortissements des immobilisations (négatif)
+  - prefix: "29"      # Dépréciations des immobilisations (négatif)
+
+inventory:
+  # Classe 3 - Stocks
+  - prefix: "31"      # Matières premières
+  - prefix: "32"      # Autres approvisionnements
+  - prefix: "33"      # En-cours de production de biens
+  - prefix: "34"      # En-cours de production de services
+  - prefix: "35"      # Stocks de produits
+  - prefix: "37"      # Stocks de marchandises
+  - prefix: "39"      # Dépréciations des stocks (négatif)
+
+receivables:
+  - prefix: "41"      # Clients et comptes rattachés
+  - prefix: "411"     # Clients
+  - prefix: "413"     # Clients - Effets à recevoir
+  - prefix: "416"     # Clients douteux ou litigieux
+  - prefix: "417"     # Clients - Retenues de garantie
+  - prefix: "418"     # Clients - Produits non encore facturés (FAE)
+  - prefix: "419"     # Clients créditeurs (négatif)
+
+other_receivables:
+  - prefix: "445"     # TVA
+  - prefix: "4456"    # TVA déductible
+  - prefix: "4458"    # TVA à régulariser
+  - prefix: "47"      # Comptes transitoires ou d'attente
+  - prefix: "48"      # Comptes de régularisation
+  - prefix: "486"     # Charges constatées d'avance
+
+cash:
+  - prefix: "50"      # Valeurs mobilières de placement
+  - prefix: "51"      # Banques, établissements financiers
+  - prefix: "512"     # Banques
+  - prefix: "514"     # Chèques postaux
+  - prefix: "53"      # Caisse
+  - prefix: "54"      # Régies d'avances et accréditifs
+  - prefix: "58"      # Virements internes
+
+equity:
+  # Classe 1 - Capitaux
+  - prefix: "10"      # Capital et réserves
+  - prefix: "101"     # Capital
+  - prefix: "104"     # Primes liées au capital
+  - prefix: "105"     # Écarts de réévaluation
+  - prefix: "106"     # Réserves
+  - prefix: "11"      # Report à nouveau
+  - prefix: "12"      # Résultat de l'exercice
+  - prefix: "13"      # Subventions d'investissement
+  - prefix: "14"      # Provisions réglementées
+
+provisions:
+  - prefix: "15"      # Provisions
+  - prefix: "151"     # Provisions pour risques
+  - prefix: "153"     # Provisions pour pensions
+  - prefix: "155"     # Provisions pour impôts
+  - prefix: "157"     # Provisions pour charges à répartir
+  - prefix: "158"     # Autres provisions pour charges
+
+financial_debt:
+  - prefix: "16"      # Emprunts et dettes assimilées
+  - prefix: "161"     # Emprunts obligataires
+  - prefix: "163"     # Autres emprunts obligataires
+  - prefix: "164"     # Emprunts auprès des établissements de crédit
+  - prefix: "165"     # Dépôts et cautionnements reçus
+  - prefix: "167"     # Emprunts et dettes assortis de conditions
+  - prefix: "168"     # Autres emprunts et dettes assimilées
+  - prefix: "17"      # Dettes rattachées à des participations
+  - prefix: "18"      # Comptes de liaison des établissements
+  - prefix: "519"     # Concours bancaires courants
+
+payables:
+  - prefix: "40"      # Fournisseurs et comptes rattachés
+  - prefix: "401"     # Fournisseurs
+  - prefix: "403"     # Fournisseurs - Effets à payer
+  - prefix: "404"     # Fournisseurs d'immobilisations
+  - prefix: "405"     # Fournisseurs d'immobilisations - Effets à payer
+  - prefix: "408"     # Fournisseurs - Factures non parvenues
+  - prefix: "409"     # Fournisseurs débiteurs (négatif)
+
+other_payables:
+  - prefix: "42"      # Personnel - Rémunérations dues
+  - prefix: "421"     # Personnel - Rémunérations dues
+  - prefix: "43"      # Organismes sociaux
+  - prefix: "431"     # Sécurité sociale
+  - prefix: "437"     # Autres organismes sociaux
+  - prefix: "44"      # État - Impôts et taxes
+  - prefix: "4455"    # TVA à décaisser
+  - prefix: "4457"    # TVA collectée
+  - prefix: "447"     # Autres impôts, taxes
+  - prefix: "45"      # Groupe et associés
+  - prefix: "455"     # Associés - Comptes courants
+  - prefix: "46"      # Débiteurs divers et créditeurs divers
+  - prefix: "467"     # Autres comptes débiteurs ou créditeurs
+  - prefix: "487"     # Produits constatés d'avance

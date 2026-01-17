@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ company_name }} - Rapport Due Diligence Financière</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Cover Page -->
+    <div class="cover-page">
+        <div class="cover-content">
+            <h1 class="company-name">{{ company_name }}</h1>
+            <h2 class="report-title">Rapport de Due Diligence Financière</h2>
+            <div class="draft-watermark">DRAFT</div>
+            <p class="date">{{ date }}</p>
+        </div>
+    </div>
+
+    <!-- Table of Contents -->
+    <div class="page toc-page">
+        <h2>Table des Matières</h2>
+        <ol class="toc">
+            <li><a href="#synthese">Synthèse</a></li>
+            <li><a href="#pl">Performance Historique - Compte de Résultat</a></li>
+            <li><a href="#bilan">Bilan</a></li>
+            <li><a href="#bfr">Analyse du BFR</a></li>
+            <li><a href="#kpis">Indicateurs Clés</a></li>
+        </ol>
+    </div>
+
+    <!-- Synthesis -->
+    <div class="page" id="synthese">
+        <h2>1. Synthèse</h2>
+
+        <div class="key-figures">
+            <h3>Chiffres Clés</h3>
+            <table class="synthesis-table">
+                <thead>
+                    <tr>
+                        <th>Indicateur</th>
+                        {% for year in years %}
+                        <th>FY{{ year }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in synthesis_data %}
+                    <tr>
+                        <td>{{ row.label }}</td>
+                        {% for value in row.values %}
+                        <td class="number">{{ value }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if key_observations %}
+        <div class="observations">
+            <h3>Observations Clés</h3>
+            <ul>
+                {% for obs in key_observations %}
+                <li>{{ obs }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- P&L -->
+    <div class="page" id="pl">
+        <h2>2. Performance Historique - Compte de Résultat</h2>
+
+        <table class="financial-table">
+            <thead>
+                <tr>
+                    <th>Libellé (k€)</th>
+                    {% for year in years %}
+                    <th>FY{{ year }}</th>
+                    {% endfor %}
+                    {% if years|length >= 2 %}
+                    <th>Var %</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in pl_data %}
+                <tr class="{{ 'total-row' if row.is_total else '' }}">
+                    <td>{{ row.label }}</td>
+                    {% for value in row.values %}
+                    <td class="number">{{ value }}</td>
+                    {% endfor %}
+                    {% if years|length >= 2 %}
+                    <td class="number {{ 'positive' if row.var_pct > 0 else 'negative' if row.var_pct < 0 else '' }}">
+                        {{ "%.1f%%"|format(row.var_pct) if row.var_pct else '-' }}
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% if ebitda_chart %}
+        <div class="chart">
+            <h3>Évolution de l'EBITDA</h3>
+            <img src="data:image/png;base64,{{ ebitda_chart }}" alt="EBITDA Evolution">
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Balance Sheet -->
+    <div class="page" id="bilan">
+        <h2>3. Bilan</h2>
+
+        <table class="financial-table">
+            <thead>
+                <tr>
+                    <th>Libellé (k€)</th>
+                    {% for label in dec_labels %}
+                    <th>{{ label }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in balance_data %}
+                <tr class="{{ 'section-row' if row.is_section else 'total-row' if row.is_total else '' }}">
+                    <td>{{ row.label }}</td>
+                    {% for value in row.values %}
+                    <td class="number">{{ value }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- BFR Analysis -->
+    <div class="page" id="bfr">
+        <h2>4. Analyse du BFR</h2>
+
+        <table class="financial-table">
+            <thead>
+                <tr>
+                    <th>Libellé</th>
+                    {% for label in dec_labels %}
+                    <th>{{ label }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in bfr_data %}
+                <tr class="{{ 'total-row' if row.is_total else '' }}">
+                    <td>{{ row.label }}</td>
+                    {% for value in row.values %}
+                    <td class="number">{{ value }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="dso-dpo">
+            <h3>Ratios de Rotation</h3>
+            <table class="kpi-table">
+                <tr>
+                    <td>DSO (jours)</td>
+                    {% for kpi in kpis %}
+                    <td class="number">{{ "%.0f"|format(kpi.dso) }}</td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td>DPO (jours)</td>
+                    {% for kpi in kpis %}
+                    <td class="number">{{ "%.0f"|format(kpi.dpo) }}</td>
+                    {% endfor %}
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="page" id="kpis">
+        <h2>5. Indicateurs Clés de Performance</h2>
+
+        <table class="kpi-table">
+            <thead>
+                <tr>
+                    <th>Indicateur</th>
+                    {% for year in years %}
+                    <th>FY{{ year }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in kpi_data %}
+                <tr>
+                    <td>{{ row.label }}</td>
+                    {% for value in row.values %}
+                    <td class="number">{{ value }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        <p>Document généré par WincapAgent | {{ date }}</p>
+    </div>
+</body>
+</html>

@@ -1,0 +1,156 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Credibile Dashboard Branding - Sage & Earth Tones */
+
+@layer base {
+  :root {
+    /* Clean white background */
+    --background: 0 0% 100%;
+    --foreground: 168 12% 31%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 168 12% 31%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 168 12% 31%;
+
+    /* Dark Sage Green - #465A56 */
+    --primary: 168 12% 31%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Light sage backgrounds - #C9DBD9 */
+    --secondary: 173 20% 82%;
+    --secondary-foreground: 168 12% 31%;
+
+    /* Muted teal - #A0BAB6 */
+    --muted: 171 16% 68%;
+    --muted-foreground: 168 8% 55%;
+
+    /* Medium sage accent - #5D7B75 */
+    --accent: 168 14% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Dark burgundy for destructive - #6D150B */
+    --destructive: 6 83% 24%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 173 20% 82%;
+    --input: 173 20% 82%;
+    --ring: 168 12% 31%;
+
+    --radius: 6px;
+
+    /* Bronze/Gold accent for success - #B17F4A */
+    --success: 31 43% 49%;
+    
+    /* Light blue accent - #6EC1E4 */
+    --info: 196 67% 66%;
+
+    /* Sidebar - Dark sage */
+    --sidebar-background: 168 12% 31%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 0 0% 100%;
+    --sidebar-primary-foreground: 168 12% 31%;
+    --sidebar-accent: 168 14% 42%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 168 14% 38%;
+    --sidebar-ring: 0 0% 100%;
+  }
+
+  .dark {
+    --background: 168 12% 8%;
+    --foreground: 173 20% 90%;
+
+    --card: 168 12% 12%;
+    --card-foreground: 173 20% 90%;
+
+    --popover: 168 12% 12%;
+    --popover-foreground: 173 20% 90%;
+
+    --primary: 173 20% 82%;
+    --primary-foreground: 168 12% 15%;
+
+    --secondary: 168 12% 18%;
+    --secondary-foreground: 173 20% 90%;
+
+    --muted: 168 10% 22%;
+    --muted-foreground: 171 16% 60%;
+
+    --accent: 168 14% 35%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 6 70% 35%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 168 12% 22%;
+    --input: 168 12% 22%;
+    --ring: 173 20% 82%;
+
+    --sidebar-background: 168 12% 6%;
+    --sidebar-foreground: 173 20% 90%;
+    --sidebar-primary: 173 20% 82%;
+    --sidebar-primary-foreground: 168 12% 15%;
+    --sidebar-accent: 168 12% 15%;
+    --sidebar-accent-foreground: 173 20% 90%;
+    --sidebar-border: 168 12% 18%;
+    --sidebar-ring: 173 20% 82%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  h1, h2, h3 {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    @apply font-medium tracking-tight;
+  }
+}
+
+@layer utilities {
+  .section-sage {
+    background-color: hsl(168 12% 31%);
+  }
+
+  .section-sage-light {
+    background-color: hsl(173 20% 82%);
+  }
+
+  .text-display {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+  }
+
+  .text-bronze {
+    color: hsl(31 43% 49%);
+  }
+
+  .bg-bronze {
+    background-color: hsl(31 43% 49%);
+  }
+
+  .smooth-scroll {
+    scroll-snap-type: y mandatory;
+  }
+
+  .snap-section {
+    scroll-snap-align: start;
+  }
+}
