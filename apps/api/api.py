@@ -3,7 +3,7 @@ Wincap API - FastAPI REST endpoints for FEC processing
 """
 
 import json
-import os
+import logging
 import tempfile
 import uuid
 from collections import defaultdict
@@ -12,11 +12,12 @@ from decimal import Decimal
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
+from config.settings import settings
 from src.parser.fec_parser import FECParser
 from src.mapper.account_mapper import AccountMapper
 from src.engine.pl_builder import PLBuilder
@@ -27,6 +28,14 @@ from src.engine.monthly_builder import MonthlyBuilder
 from src.engine.variance_builder import VarianceBuilder
 from src.export.excel_writer import ExcelWriter
 from src.export.pdf_writer import PDFWriter
+from src.exceptions import FECParsingError, ValidationError
+from src.validators import validate_fec_file, sanitize_filename
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # App Configuration
@@ -36,15 +45,17 @@ app = FastAPI(
     title="Wincap API",
     description="Financial Due Diligence Report Generation API",
     version="1.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
 )
 
-# CORS for frontend
+# CORS for frontend (uses configuration from .env)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
+    allow_methods=settings.CORS_ALLOW_METHODS,
+    allow_headers=settings.CORS_ALLOW_HEADERS,
 )
 
 # Temporary storage for processed data (in production, use Redis/DB)
@@ -105,35 +116,80 @@ async def upload_fec(
 ):
     """
     Upload FEC file(s) for processing.
+
+    Validates file types and sizes, then parses FEC entries.
     Returns a session_id to use for subsequent operations.
+
+    **Parameters:**
+    - `files`: One or more FEC text files (.txt)
+
+    **Returns:**
+    - `session_id`: UUID for referencing this upload session
+    - `files`: List of uploaded files with metadata
+    - `total_entries`: Total number of accounting entries
+    - `years`: Fiscal years found in files
+
+    **Errors:**
+    - 400: Invalid file type or size
+    - 400: Invalid FEC format
     """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
+
     session_id = str(uuid.uuid4())
-    session_dir = Path(tempfile.gettempdir()) / "wincap" / session_id
+    session_dir = Path(settings.UPLOAD_TEMP_DIR) / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
 
     uploaded_files = []
     all_entries = []
 
     for file in files:
-        # Save file temporarily
-        file_path = session_dir / file.filename
-        content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
-
-        # Parse FEC
         try:
-            parser = FECParser(str(file_path))
-            entries = parser.parse()
-            all_entries.extend(entries)
-            uploaded_files.append({
-                "filename": file.filename,
-                "entries": len(entries),
-                "years": list(parser.years),
-                "encoding": parser._encoding,
-            })
+            # Read file content
+            content = await file.read()
+
+            # Validate file
+            is_valid, error = validate_fec_file(Path(file.filename), len(content))
+            if not is_valid:
+                logger.warning(f"File validation failed: {error}")
+                raise HTTPException(status_code=400, detail=error)
+
+            # Sanitize filename
+            safe_filename = sanitize_filename(file.filename)
+            file_path = session_dir / safe_filename
+
+            # Save file temporarily
+            with open(file_path, "wb") as f:
+                f.write(content)
+
+            # Parse FEC
+            try:
+                parser = FECParser(str(file_path))
+                entries = parser.parse()
+                all_entries.extend(entries)
+                logger.info(f"Successfully parsed {file.filename}: {len(entries)} entries")
+
+                uploaded_files.append({
+                    "filename": file.filename,
+                    "entries": len(entries),
+                    "years": sorted(list(parser.years)),
+                    "encoding": parser.encoding,
+                    "delimiter": parser.delimiter,
+                })
+            except FECParsingError as e:
+                logger.warning(f"FEC parse error for {file.filename}: {e}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid FEC format in {file.filename}: {str(e)}"
+                )
+        except HTTPException:
+            raise
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to parse {file.filename}: {str(e)}")
+            logger.error(f"Unexpected error processing {file.filename}: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail="Internal server error during file processing"
+            )
 
     # Store in session
     SESSIONS[session_id] = {

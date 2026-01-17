@@ -350,6 +350,16 @@ class FECParser:
         """Get unique fiscal years in the data."""
         return sorted(set(e.fiscal_year for e in self.entries))
 
+    @property
+    def encoding(self) -> Optional[str]:
+        """Get detected file encoding (UTF-8, Latin-1, CP1252, etc.)."""
+        return self._encoding
+
+    @property
+    def delimiter(self) -> Optional[str]:
+        """Get detected field delimiter (\\t for tab, ; for semicolon, | for pipe)."""
+        return self._delimiter
+
     def entries_by_year(self, year: int) -> List[JournalEntry]:
         """Filter entries for a specific fiscal year."""
         return [e for e in self.entries if e.fiscal_year == year]
