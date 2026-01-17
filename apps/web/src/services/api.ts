@@ -103,6 +103,52 @@ export interface FinancialData {
   variance: Record<string, unknown>;
 }
 
+export interface AgentSummary {
+  years: number[];
+  pl_summary: Array<{
+    year: number;
+    revenue: number;
+    ebitda: number;
+    ebitda_margin: number;
+    net_income: number;
+  }>;
+  balance_summary: Array<{
+    year: number;
+    total_assets: number;
+    equity: number;
+    net_debt: number;
+  }>;
+  kpis: Array<{
+    year: number;
+    dso: number | null;
+    dpo: number | null;
+    dio: number | null;
+  }>;
+}
+
+export interface JournalEntry {
+  date: string;
+  account_num: string;
+  label: string;
+  amount: number;
+}
+
+export interface TraceResult {
+  value: number;
+  entry_count: number;
+  entries: JournalEntry[];
+}
+
+export interface AnomalyEntry extends JournalEntry {
+  z_score: number;
+}
+
+export interface AnomaliesResult {
+  year: number;
+  anomaly_count: number;
+  entries: AnomalyEntry[];
+}
+
 // =============================================================================
 // API Functions
 // =============================================================================
@@ -228,6 +274,152 @@ export async function deleteSession(sessionId: string): Promise<void> {
 }
 
 // =============================================================================
+// Agent Tools API Functions (Phase B)
+// =============================================================================
+
+/**
+ * Get executive summary of the deal
+ */
+export async function getAgentSummary(sessionId: string): Promise<AgentSummary> {
+  const response = await fetch(`${API_BASE_URL}/api/agent/${sessionId}/summary`);
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to fetch summary');
+  }
+  return response.json();
+}
+
+/**
+ * Get P&L statement for a fiscal year
+ */
+export async function getAgentPL(sessionId: string, year?: number): Promise<any> {
+  const url = new URL(`${API_BASE_URL}/api/agent/${sessionId}/pl`);
+  if (year) url.searchParams.set('year', year.toString());
+  const response = await fetch(url);
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to fetch P&L');
+  }
+  return response.json();
+}
+
+/**
+ * Get balance sheet for a fiscal year
+ */
+export async function getAgentBalance(sessionId: string, year?: number): Promise<any> {
+  const url = new URL(`${API_BASE_URL}/api/agent/${sessionId}/balance`);
+  if (year) url.searchParams.set('year', year.toString());
+  const response = await fetch(url);
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to fetch balance sheet');
+  }
+  return response.json();
+}
+
+/**
+ * Get KPIs for a fiscal year
+ */
+export async function getAgentKPIs(sessionId: string, year?: number): Promise<any> {
+  const url = new URL(`${API_BASE_URL}/api/agent/${sessionId}/kpis`);
+  if (year) url.searchParams.set('year', year.toString());
+  const response = await fetch(url);
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to fetch KPIs');
+  }
+  return response.json();
+}
+
+/**
+ * Search and filter journal entries
+ */
+export async function getAgentEntries(
+  sessionId: string,
+  options?: {
+    compte_prefix?: string;
+    year?: number;
+    min_amount?: number;
+    label_contains?: string;
+    limit?: number;
+  }
+): Promise<any> {
+  const url = new URL(`${API_BASE_URL}/api/agent/${sessionId}/entries`);
+  if (options) {
+    if (options.compte_prefix) url.searchParams.set('compte_prefix', options.compte_prefix);
+    if (options.year) url.searchParams.set('year', options.year.toString());
+    if (options.min_amount) url.searchParams.set('min_amount', options.min_amount.toString());
+    if (options.label_contains) url.searchParams.set('label_contains', options.label_contains);
+    if (options.limit) url.searchParams.set('limit', options.limit.toString());
+  }
+  const response = await fetch(url);
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to fetch entries');
+  }
+  return response.json();
+}
+
+/**
+ * Explain variance between years for a metric
+ */
+export async function getAgentExplainVariance(
+  sessionId: string,
+  metric: string,
+  yearFrom: number,
+  yearTo: number
+): Promise<any> {
+  const url = new URL(`${API_BASE_URL}/api/agent/${sessionId}/explain`);
+  url.searchParams.set('metric', metric);
+  url.searchParams.set('year_from', yearFrom.toString());
+  url.searchParams.set('year_to', yearTo.toString());
+  const response = await fetch(url);
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to explain variance');
+  }
+  return response.json();
+}
+
+/**
+ * Get trace (provenance) for a metric
+ */
+export async function getAgentTrace(
+  sessionId: string,
+  metric: string,
+  year: number
+): Promise<TraceResult> {
+  const url = new URL(`${API_BASE_URL}/api/agent/${sessionId}/trace`);
+  url.searchParams.set('metric', metric);
+  url.searchParams.set('year', year.toString());
+  const response = await fetch(url);
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to fetch trace');
+  }
+  return response.json();
+}
+
+/**
+ * Find statistically anomalous entries
+ */
+export async function getAgentAnomalies(
+  sessionId: string,
+  year?: number,
+  zThreshold?: number
+): Promise<AnomaliesResult> {
+  const url = new URL(`${API_BASE_URL}/api/agent/${sessionId}/anomalies`);
+  if (year) url.searchParams.set('year', year.toString());
+  if (zThreshold) url.searchParams.set('z_threshold', zThreshold.toString());
+  const response = await fetch(url);
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to fetch anomalies');
+  }
+  return response.json();
+}
+
+// =============================================================================
 // Export default API object
 // =============================================================================
 
@@ -239,6 +431,14 @@ export const api = {
   downloadExcel,
   downloadPDF,
   deleteSession,
+  getAgentSummary,
+  getAgentPL,
+  getAgentBalance,
+  getAgentKPIs,
+  getAgentEntries,
+  getAgentExplainVariance,
+  getAgentTrace,
+  getAgentAnomalies,
 };
 
 export default api;
