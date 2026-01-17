@@ -17,8 +17,8 @@ class PLBuilder:
 
     def build(self, entries: List[JournalEntry], year: int) -> ProfitLoss:
         """Build P&L for a specific fiscal year."""
-        # Filter entries for the year
-        year_entries = [e for e in entries if e.fiscal_year == year]
+        # Filter entries for the year (use effective_year for consistency with balance sheet)
+        year_entries = [e for e in entries if e.effective_year == year]
 
         # Aggregate by category
         totals: Dict[str, Decimal] = defaultdict(Decimal)
@@ -58,7 +58,7 @@ class PLBuilder:
 
     def build_multi_year(self, entries: List[JournalEntry]) -> List[ProfitLoss]:
         """Build P&L for all years in the data."""
-        years = sorted(set(e.fiscal_year for e in entries))
+        years = sorted(set(e.effective_year for e in entries))
         return [self.build(entries, year) for year in years]
 
     def compute_variations(self, pl_list: List[ProfitLoss]) -> List[Dict]:

@@ -2,11 +2,14 @@
 Wincap API - FastAPI REST endpoints for FEC processing
 """
 
+import asyncio
 import json
 import logging
 import tempfile
+import threading
 import uuid
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -38,6 +41,53 @@ from src.validators import validate_fec_file, sanitize_filename
 logger = logging.getLogger(__name__)
 
 # =============================================================================
+# Temporary storage for processed data (in production, use Redis/DB)
+# =============================================================================
+
+SESSIONS = {}
+SESSIONS_LOCK = threading.Lock()  # Thread-safe access to SESSIONS dict
+cleanup_task: Optional[asyncio.Task] = None
+
+# =============================================================================
+# Lifespan Context Manager
+# =============================================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI lifespan context - runs on startup/shutdown."""
+    global cleanup_task
+
+    # Startup
+    async def cleanup_loop():
+        """Periodic cleanup every CLEANUP_INTERVAL_HOURS."""
+        while True:
+            try:
+                await asyncio.sleep(settings.CLEANUP_INTERVAL_HOURS * 3600)
+                from src.cleanup import cleanup_old_sessions, cleanup_empty_directories
+                cleanup_old_sessions()
+                cleanup_empty_directories()
+                logger.info("Periodic cleanup completed")
+            except asyncio.CancelledError:
+                logger.info("Cleanup task cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Cleanup task failed: {e}", exc_info=True)
+
+    cleanup_task = asyncio.create_task(cleanup_loop())
+    logger.info(f"Cleanup task started (interval: {settings.CLEANUP_INTERVAL_HOURS}h)")
+
+    yield
+
+    # Shutdown
+    if cleanup_task and not cleanup_task.done():
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
+    logger.info("Cleanup task stopped")
+
+# =============================================================================
 # App Configuration
 # =============================================================================
 
@@ -47,6 +97,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
+    lifespan=lifespan,
 )
 
 # CORS for frontend (uses configuration from .env)
@@ -57,9 +108,6 @@ app.add_middleware(
     allow_methods=settings.CORS_ALLOW_METHODS,
     allow_headers=settings.CORS_ALLOW_HEADERS,
 )
-
-# Temporary storage for processed data (in production, use Redis/DB)
-SESSIONS = {}
 
 # =============================================================================
 # Models
@@ -191,13 +239,14 @@ async def upload_fec(
                 detail="Internal server error during file processing"
             )
 
-    # Store in session
-    SESSIONS[session_id] = {
-        "entries": all_entries,
-        "files": uploaded_files,
-        "dir": str(session_dir),
-        "created": datetime.now().isoformat(),
-    }
+    # Store in session (thread-safe)
+    with SESSIONS_LOCK:
+        SESSIONS[session_id] = {
+            "entries": all_entries,
+            "files": uploaded_files,
+            "dir": str(session_dir),
+            "created": datetime.now().isoformat(),
+        }
 
     # Get unique years
     years = sorted(set(e.fiscal_year for e in all_entries))
@@ -214,7 +263,8 @@ async def process_fec(request: ProcessRequest):
     """
     Process uploaded FEC data and generate financial statements.
     """
-    session = SESSIONS.get(request.session_id)
+    with SESSIONS_LOCK:
+        session = SESSIONS.get(request.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found. Please upload files first.")
 
@@ -313,7 +363,8 @@ async def get_data(session_id: str):
     Get full processed data for a session.
     Returns JSON suitable for dashboard consumption.
     """
-    session = SESSIONS.get(session_id)
+    with SESSIONS_LOCK:
+        session = SESSIONS.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
 
@@ -395,7 +446,8 @@ async def get_data(session_id: str):
 @app.get("/api/export/xlsx/{session_id}")
 async def export_xlsx(session_id: str):
     """Export processed data as Excel Databook."""
-    session = SESSIONS.get(session_id)
+    with SESSIONS_LOCK:
+        session = SESSIONS.get(session_id)
     if not session or "processed" not in session:
         raise HTTPException(status_code=404, detail="No processed data found.")
 
@@ -426,7 +478,8 @@ async def export_xlsx(session_id: str):
 @app.get("/api/export/pdf/{session_id}")
 async def export_pdf(session_id: str):
     """Export processed data as PDF report."""
-    session = SESSIONS.get(session_id)
+    with SESSIONS_LOCK:
+        session = SESSIONS.get(session_id)
     if not session or "processed" not in session:
         raise HTTPException(status_code=404, detail="No processed data found.")
 
@@ -454,7 +507,8 @@ async def export_pdf(session_id: str):
 @app.delete("/api/session/{session_id}")
 async def delete_session(session_id: str):
     """Clean up a session and its temporary files."""
-    session = SESSIONS.pop(session_id, None)
+    with SESSIONS_LOCK:
+        session = SESSIONS.pop(session_id, None)
     if session:
         # Clean up temp files
         session_dir = Path(session.get("dir", ""))
