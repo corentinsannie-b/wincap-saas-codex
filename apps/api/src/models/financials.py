@@ -1,6 +1,51 @@
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Dict
+from typing import Dict, List, Tuple, Optional
+
+
+@dataclass
+class TracedValue:
+    """A financial value with provenance tracking.
+
+    Tracks a monetary amount and links it back to the journal entries that created it.
+    This enables the "click to trace" feature - every number in P&L and Balance can
+    show its source entries.
+    """
+
+    value: Decimal = Decimal("0")
+    """The actual monetary value."""
+
+    entries: List[Tuple[str, str, str, Decimal]] = field(default_factory=list)
+    """List of contributing journal entries.
+    Each entry is: (date_str, account_num, label, amount)
+    Example: ("2024-01-15", "701000", "Vente produits finis", Decimal("12500"))
+    """
+
+    def add(self, amount: Decimal, entry: Tuple[str, str, str, Decimal]) -> None:
+        """Add an amount and track its source entry."""
+        self.value += amount
+        self.entries.append(entry)
+
+    def add_value(self, other: "TracedValue") -> None:
+        """Combine with another TracedValue, merging entries."""
+        self.value += other.value
+        self.entries.extend(other.entries)
+
+    def get_trace(self) -> Dict:
+        """Export trace as JSON-serializable dict."""
+        return {
+            "value": float(self.value),
+            "entry_count": len(self.entries),
+            "entries": [
+                {
+                    "date": date,
+                    "account": account,
+                    "label": label,
+                    "amount": float(amount)
+                }
+                for date, account, label, amount in self.entries
+            ]
+        }
 
 
 @dataclass
@@ -31,6 +76,9 @@ class ProfitLoss:
 
     # Tax
     income_tax: Decimal = Decimal("0")  # Impôt sur les sociétés (69)
+
+    # Trace tracking (not included in init, internal use only)
+    _traces: Dict[str, TracedValue] = field(default_factory=dict, init=False, repr=False)
 
     @property
     def production(self) -> Decimal:
@@ -75,6 +123,39 @@ class ProfitLoss:
             return Decimal("0")
         return (self.ebitda / self.production) * 100
 
+    # Trace/Provenance Methods (Phase A Feature)
+
+    def set_traced(self, field_name: str, traced_value: TracedValue) -> None:
+        """Set traced value for a field.
+
+        Args:
+            field_name: Name of the field (e.g., 'revenue', 'purchases')
+            traced_value: TracedValue object with value and source entries
+        """
+        self._traces[field_name] = traced_value
+
+    def get_trace(self, field_name: str) -> Optional[Dict]:
+        """Get trace for a field.
+
+        Args:
+            field_name: Name of the field (e.g., 'revenue', 'purchases')
+
+        Returns:
+            Dict with value, entry_count, and list of source entries
+            Returns None if no trace exists for this field
+        """
+        if field_name in self._traces:
+            return self._traces[field_name].get_trace()
+        return None
+
+    def get_all_traces(self) -> Dict[str, Dict]:
+        """Get all traces for this P&L.
+
+        Returns:
+            Dict mapping field names to their trace data
+        """
+        return {name: traced.get_trace() for name, traced in self._traces.items()}
+
 
 @dataclass
 class BalanceSheet:
@@ -95,6 +176,9 @@ class BalanceSheet:
     financial_debt: Decimal = Decimal("0")  # Dettes financières (16, 17)
     payables: Decimal = Decimal("0")  # Fournisseurs (40)
     other_payables: Decimal = Decimal("0")  # Autres dettes (42-49)
+
+    # Trace tracking (not included in init, internal use only)
+    _traces: Dict[str, TracedValue] = field(default_factory=dict, init=False, repr=False)
 
     @property
     def total_assets(self) -> Decimal:
@@ -117,6 +201,39 @@ class BalanceSheet:
     def net_debt(self) -> Decimal:
         """Dette nette = Dettes financières - Trésorerie."""
         return self.financial_debt - self.cash
+
+    # Trace/Provenance Methods (Phase A Feature)
+
+    def set_traced(self, field_name: str, traced_value: TracedValue) -> None:
+        """Set traced value for a field.
+
+        Args:
+            field_name: Name of the field (e.g., 'receivables', 'payables')
+            traced_value: TracedValue object with value and source entries
+        """
+        self._traces[field_name] = traced_value
+
+    def get_trace(self, field_name: str) -> Optional[Dict]:
+        """Get trace for a field.
+
+        Args:
+            field_name: Name of the field (e.g., 'receivables', 'payables')
+
+        Returns:
+            Dict with value, entry_count, and list of source entries
+            Returns None if no trace exists for this field
+        """
+        if field_name in self._traces:
+            return self._traces[field_name].get_trace()
+        return None
+
+    def get_all_traces(self) -> Dict[str, Dict]:
+        """Get all traces for this balance sheet.
+
+        Returns:
+            Dict mapping field names to their trace data
+        """
+        return {name: traced.get_trace() for name, traced in self._traces.items()}
 
 
 @dataclass
