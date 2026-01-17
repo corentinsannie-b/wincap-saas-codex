@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Loader2, AlertCircle, Download } from 'lucide-react';
 import { api } from '@/services/api';
+import ChatPanel from '@/components/ChatPanel';
 
 export default function Dashboard() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -60,7 +61,7 @@ export default function Dashboard() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="bg-gradient-to-r from-primary to-accent text-primary-foreground px-8 py-8">
-        <div className="max-w-7xl mx-auto">
+        <div className="max-w-full mx-auto">
           <h1 className="text-3xl font-bold mb-2">{data?.metadata?.company_name || 'Financial Analysis'}</h1>
           <p className="text-lg opacity-90">
             {summary?.years?.join(', ')} • Generated {new Date(data?.metadata?.generated_at).toLocaleDateString()}
@@ -68,8 +69,10 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto p-8 space-y-8">
+      {/* Main Content with Chat Panel */}
+      <div className="flex h-[calc(100vh-200px)]">
+        {/* Left Content Area */}
+        <main className="flex-1 overflow-y-auto p-8 space-y-8">
         {/* KPI Cards */}
         {latestPL && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -226,31 +229,37 @@ export default function Dashboard() {
           </TabsContent>
         </Tabs>
 
-        {/* Export Actions */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Export Options</CardTitle>
-          </CardHeader>
-          <CardContent className="flex gap-3">
-            <Button
-              onClick={() => api.downloadExcel(sessionId)}
-              variant="outline"
-              className="gap-2"
-            >
-              <Download className="h-4 w-4" />
-              Download Excel
-            </Button>
-            <Button
-              onClick={() => api.downloadPDF(sessionId)}
-              variant="outline"
-              className="gap-2"
-            >
-              <Download className="h-4 w-4" />
-              Download PDF
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
+          {/* Export Actions */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Export Options</CardTitle>
+            </CardHeader>
+            <CardContent className="flex gap-3">
+              <Button
+                onClick={() => api.downloadExcel(sessionId)}
+                variant="outline"
+                className="gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Download Excel
+              </Button>
+              <Button
+                onClick={() => api.downloadPDF(sessionId)}
+                variant="outline"
+                className="gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Download PDF
+              </Button>
+            </CardContent>
+          </Card>
+        </main>
+
+        {/* Right Sidebar - Chat Panel */}
+        <div className="w-96 overflow-hidden border-l bg-background">
+          <ChatPanel sessionId={sessionId} />
+        </div>
+      </div>
     </div>
   );
 }

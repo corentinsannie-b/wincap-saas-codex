@@ -5,6 +5,7 @@ Wincap API - FastAPI REST endpoints for FEC processing
 import asyncio
 import json
 import logging
+import os
 import tempfile
 import threading
 import uuid
@@ -15,6 +16,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import List, Optional
 
+from anthropic import Anthropic
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -30,8 +32,15 @@ from src.engine.cashflow_builder import CashFlowBuilder
 from src.engine.monthly_builder import MonthlyBuilder
 from src.engine.variance_builder import VarianceBuilder
 from src.export.excel_writer import ExcelWriter
-from src.export.pdf_writer import PDFWriter
 from src.exceptions import FECParsingError, ValidationError
+
+# PDF export is optional - requires system libraries (WeasyPrint)
+try:
+    from src.export.pdf_writer import PDFWriter
+    PDF_AVAILABLE = True
+except OSError:
+    PDFWriter = None
+    PDF_AVAILABLE = False
 from src.validators import validate_fec_file, sanitize_filename
 from src.agent.tools import DealAgent
 
@@ -131,6 +140,17 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     timestamp: str
+
+class ChatMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+class ChatRequest(BaseModel):
+    message: str
+
+class ChatResponse(BaseModel):
+    role: str  # "assistant"
+    content: str
 
 # =============================================================================
 # Helper Functions
@@ -479,6 +499,12 @@ async def export_xlsx(session_id: str):
 @app.get("/api/export/pdf/{session_id}")
 async def export_pdf(session_id: str):
     """Export processed data as PDF report."""
+    if not PDF_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="PDF export is not available. System dependencies missing. Use Excel export instead."
+        )
+
     with SESSIONS_LOCK:
         session = SESSIONS.get(session_id)
     if not session or "processed" not in session:
@@ -716,9 +742,308 @@ async def agent_find_anomalies(
     agent, error = _get_agent_for_session(session_id)
     if error:
         return error
-    
+
     result = agent.find_anomalies(year=year, z_threshold=z_threshold)
     return JSONResponse(content=decimal_to_float(result))
+
+
+# =============================================================================
+# Claude Chat with Tool Calling (Phase C)
+# =============================================================================
+
+def _build_tools_schema() -> List[dict]:
+    """Build Claude tool schema from DealAgent methods."""
+    return [
+        {
+            "name": "get_summary",
+            "description": "Get executive summary of the financial deal with key metrics and trends",
+            "input_schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        },
+        {
+            "name": "get_pl",
+            "description": "Get P&L (Profit & Loss) statement for a fiscal year",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "year": {
+                        "type": "integer",
+                        "description": "Fiscal year (if not provided, returns latest year)"
+                    }
+                },
+                "required": []
+            }
+        },
+        {
+            "name": "get_balance",
+            "description": "Get balance sheet for a fiscal year",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "year": {
+                        "type": "integer",
+                        "description": "Fiscal year (if not provided, returns latest year)"
+                    }
+                },
+                "required": []
+            }
+        },
+        {
+            "name": "get_kpis",
+            "description": "Get Key Performance Indicators (KPIs) for a fiscal year",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "year": {
+                        "type": "integer",
+                        "description": "Fiscal year (if not provided, returns latest year)"
+                    }
+                },
+                "required": []
+            }
+        },
+        {
+            "name": "get_entries",
+            "description": "Search and filter journal entries with optional filters",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "compte_prefix": {
+                        "type": "string",
+                        "description": "Filter by account code prefix (e.g. '41' or '401')"
+                    },
+                    "year": {
+                        "type": "integer",
+                        "description": "Filter by fiscal year"
+                    },
+                    "min_amount": {
+                        "type": "number",
+                        "description": "Filter entries with absolute value >= min_amount"
+                    },
+                    "label_contains": {
+                        "type": "string",
+                        "description": "Filter by label substring (case-insensitive)"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of entries to return (default 100)"
+                    }
+                },
+                "required": []
+            }
+        },
+        {
+            "name": "explain_variance",
+            "description": "Explain what drove the change in a metric between two years",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "metric": {
+                        "type": "string",
+                        "description": "Metric to analyze (e.g. 'revenue', 'ebitda', 'personnel')"
+                    },
+                    "year_from": {
+                        "type": "integer",
+                        "description": "Starting year"
+                    },
+                    "year_to": {
+                        "type": "integer",
+                        "description": "Ending year"
+                    }
+                },
+                "required": ["metric", "year_from", "year_to"]
+            }
+        },
+        {
+            "name": "trace_metric",
+            "description": "Get all source journal entries that contributed to a P&L or balance sheet metric",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "metric": {
+                        "type": "string",
+                        "description": "Metric name (e.g. 'revenue', 'receivables', 'payables')"
+                    },
+                    "year": {
+                        "type": "integer",
+                        "description": "Fiscal year"
+                    }
+                },
+                "required": ["metric", "year"]
+            }
+        },
+        {
+            "name": "find_anomalies",
+            "description": "Find statistically anomalous journal entries (outliers)",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "year": {
+                        "type": "integer",
+                        "description": "Filter to specific year (if not provided, uses all years)"
+                    },
+                    "z_threshold": {
+                        "type": "number",
+                        "description": "Z-score threshold for anomaly detection (default 2.5)"
+                    }
+                },
+                "required": []
+            }
+        }
+    ]
+
+
+def _execute_tool(agent: DealAgent, tool_name: str, tool_input: dict) -> dict:
+    """Execute a tool and return result."""
+    try:
+        if tool_name == "get_summary":
+            return agent.get_summary()
+        elif tool_name == "get_pl":
+            return agent.get_pl(year=tool_input.get("year"))
+        elif tool_name == "get_balance":
+            return agent.get_balance(year=tool_input.get("year"))
+        elif tool_name == "get_kpis":
+            return agent.get_kpis(year=tool_input.get("year"))
+        elif tool_name == "get_entries":
+            return agent.get_entries(
+                compte_prefix=tool_input.get("compte_prefix"),
+                year=tool_input.get("year"),
+                min_amount=tool_input.get("min_amount"),
+                label_contains=tool_input.get("label_contains"),
+                limit=tool_input.get("limit", 100)
+            )
+        elif tool_name == "explain_variance":
+            return agent.explain_variance(
+                metric=tool_input.get("metric"),
+                year_from=tool_input.get("year_from"),
+                year_to=tool_input.get("year_to")
+            )
+        elif tool_name == "trace_metric":
+            return agent.trace_metric(
+                metric=tool_input.get("metric"),
+                year=tool_input.get("year")
+            )
+        elif tool_name == "find_anomalies":
+            return agent.find_anomalies(
+                year=tool_input.get("year"),
+                z_threshold=tool_input.get("z_threshold", 2.5)
+            )
+        else:
+            return {"error": f"Unknown tool: {tool_name}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/agent/{session_id}/chat")
+async def agent_chat(session_id: str, request: ChatRequest):
+    """
+    Chat with Claude about financial data using tool calling.
+
+    Claude can call 8 different tools to analyze the financial data:
+    - get_summary: Executive summary
+    - get_pl: P&L statement
+    - get_balance: Balance sheet
+    - get_kpis: Key performance indicators
+    - get_entries: Search journal entries
+    - explain_variance: Year-over-year analysis
+    - trace_metric: Source entries for a metric
+    - find_anomalies: Detect outliers
+
+    Parameters:
+    - message: User message in French or English
+
+    Returns:
+    - Chat response from Claude with analysis
+    """
+    agent, error = _get_agent_for_session(session_id)
+    if error:
+        return error
+
+    # Initialize Anthropic client
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "ANTHROPIC_API_KEY not set"}
+        )
+
+    client = Anthropic(api_key=api_key)
+
+    # System prompt in French for financial analysis
+    system_prompt = """Tu es un analyste financier expert spécialisé dans l'analyse de due diligence.
+Tu as accès à des outils pour interroger les données financières d'une entreprise.
+Tu réponds toujours en français.
+Utilise les outils disponibles pour répondre aux questions de manière précise et approfondie.
+Fournis des analyses structurées avec des insights clairs."""
+
+    # Build messages list
+    messages = [
+        {"role": "user", "content": request.message}
+    ]
+
+    # Tool call loop (max 5 iterations to prevent loops)
+    tools_schema = _build_tools_schema()
+    max_iterations = 5
+    iteration = 0
+
+    while iteration < max_iterations:
+        iteration += 1
+
+        # Call Claude with tools
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=2048,
+            system=system_prompt,
+            tools=tools_schema,
+            messages=messages
+        )
+
+        # Check if Claude wants to use tools
+        if response.stop_reason == "tool_use":
+            # Process tool calls
+            tool_results = []
+            assistant_message = {"role": "assistant", "content": response.content}
+
+            for content_block in response.content:
+                if content_block.type == "tool_use":
+                    tool_name = content_block.name
+                    tool_input = content_block.input
+                    tool_use_id = content_block.id
+
+                    # Execute tool
+                    tool_result = _execute_tool(agent, tool_name, tool_input)
+
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "content": json.dumps(decimal_to_float(tool_result))
+                    })
+
+            # Add assistant message and tool results
+            messages.append(assistant_message)
+            messages.append({"role": "user", "content": tool_results})
+
+        else:
+            # Claude is done (stop_reason == "end_turn")
+            # Extract final text response
+            final_text = ""
+            for content_block in response.content:
+                if hasattr(content_block, "text"):
+                    final_text += content_block.text
+
+            return JSONResponse(content=ChatResponse(
+                role="assistant",
+                content=final_text
+            ).model_dump())
+
+    # Max iterations reached
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Maximum tool call iterations reached"}
+    )
 
 
 @app.delete("/api/session/{session_id}")

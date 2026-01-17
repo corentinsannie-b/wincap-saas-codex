@@ -70,11 +70,11 @@ export default function Upload() {
     setIsDragging(false);
 
     const droppedFiles = Array.from(e.dataTransfer.files).filter((file) =>
-      file.name.toLowerCase().endsWith('.csv')
+      file.name.toLowerCase().endsWith('.csv') || file.name.toLowerCase().endsWith('.txt')
     );
 
     if (droppedFiles.length === 0) {
-      setError('Please drop CSV files only');
+      setError('Please drop FEC files (CSV or TXT)');
       return;
     }
 
@@ -142,7 +142,7 @@ export default function Upload() {
               <input
                 type="file"
                 multiple
-                accept=".csv"
+                accept=".csv,.txt"
                 onChange={handleFileSelect}
                 disabled={isLoading}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"

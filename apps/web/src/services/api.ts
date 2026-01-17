@@ -419,6 +419,29 @@ export async function getAgentAnomalies(
   return response.json();
 }
 
+/**
+ * Chat with Claude about financial data using tool calling
+ */
+export async function sendChatMessage(
+  sessionId: string,
+  message: string
+): Promise<{ role: string; content: string }> {
+  const response = await fetch(`${API_BASE_URL}/api/agent/${sessionId}/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ message }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to send chat message');
+  }
+
+  return response.json();
+}
+
 // =============================================================================
 // Export default API object
 // =============================================================================
@@ -439,6 +462,7 @@ export const api = {
   getAgentExplainVariance,
   getAgentTrace,
   getAgentAnomalies,
+  sendChatMessage,
 };
 
 export default api;
