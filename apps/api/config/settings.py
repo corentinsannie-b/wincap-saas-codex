@@ -9,6 +9,7 @@ Configuration values are loaded from:
 import os
 from decimal import Decimal
 from pathlib import Path
+from typing import Optional, Set, List
 
 from pydantic_settings import BaseSettings
 
@@ -26,18 +27,18 @@ class Settings(BaseSettings):
     # =========================================================================
     # CORS Configuration
     # =========================================================================
-    CORS_ORIGINS: list[str] = [
+    CORS_ORIGINS: List[str] = [
         origin.strip()
         for origin in os.getenv(
             "CORS_ORIGINS", "http://localhost:5173,http://localhost:3000"
         ).split(",")
     ]
     CORS_ALLOW_CREDENTIALS: bool = os.getenv("CORS_ALLOW_CREDENTIALS", "true").lower() == "true"
-    CORS_ALLOW_METHODS: list[str] = [
+    CORS_ALLOW_METHODS: List[str] = [
         method.strip()
         for method in os.getenv("CORS_ALLOW_METHODS", "GET,POST").split(",")
     ]
-    CORS_ALLOW_HEADERS: list[str] = [
+    CORS_ALLOW_HEADERS: List[str] = [
         header.strip() for header in os.getenv("CORS_ALLOW_HEADERS", "*").split(",")
     ]
 
@@ -45,7 +46,7 @@ class Settings(BaseSettings):
     # File Upload Configuration
     # =========================================================================
     MAX_FILE_SIZE: int = int(os.getenv("MAX_FILE_SIZE", str(50 * 1024 * 1024)))  # 50 MB
-    ALLOWED_EXTENSIONS: set[str] = set(
+    ALLOWED_EXTENSIONS: Set[str] = set(
         ext.strip() for ext in os.getenv("ALLOWED_EXTENSIONS", ".txt").split(",")
     )
     UPLOAD_TEMP_DIR: str = os.getenv("UPLOAD_TEMP_DIR", "/tmp/wincap")
@@ -66,7 +67,7 @@ class Settings(BaseSettings):
     # Logging Configuration
     # =========================================================================
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
-    LOG_FILE: str | None = os.getenv("LOG_FILE", None)
+    LOG_FILE: Optional[str] = os.getenv("LOG_FILE", None)
     LOG_FORMAT: str = (
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
