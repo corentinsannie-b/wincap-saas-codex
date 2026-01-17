@@ -33,6 +33,7 @@ from src.export.excel_writer import ExcelWriter
 from src.export.pdf_writer import PDFWriter
 from src.exceptions import FECParsingError, ValidationError
 from src.validators import validate_fec_file, sanitize_filename
+from src.agent.tools import DealAgent
 
 # =============================================================================
 # Logging Configuration
@@ -583,6 +584,142 @@ async def get_trace(session_id: str, metric: str, year: int):
         status_code=404,
         detail=f"Metric '{metric}' not found for year {year}. Available for this year: {[pl.year for pl in pl_list] if pl_list else [bs.year for bs in balance_list]}"
     )
+
+
+
+# =============================================================================
+# Agent Tools Endpoints (Phase B)
+# =============================================================================
+
+
+def _get_agent_for_session(session_id: str) -> tuple:
+    """Get DealAgent instance for a session.
+    
+    Returns: (agent, error_response) tuple
+    If error: agent is None, error_response is JSONResponse
+    If success: agent is DealAgent instance, error_response is None
+    """
+    with SESSIONS_LOCK:
+        session = SESSIONS.get(session_id)
+    
+    if not session or "processed" not in session:
+        error_resp = JSONResponse(
+            status_code=404,
+            content={"detail": "Session not found or not processed"}
+        )
+        return None, error_resp
+    
+    processed = session["processed"]
+    entries = session.get("entries", [])
+    pl_list = processed.get("pl_list", [])
+    balance_list = processed.get("balance_list", [])
+    kpis_list = processed.get("kpis_list", [])
+    
+    agent = DealAgent(entries, pl_list, balance_list, kpis_list)
+    return agent, None
+
+@app.get("/api/agent/{session_id}/summary")
+async def agent_summary(session_id: str):
+    """Get executive summary of the deal."""
+    agent, error = _get_agent_for_session(session_id)
+    if error:
+        return error
+    
+    result = agent.get_summary()
+    return JSONResponse(content=decimal_to_float(result))
+
+@app.get("/api/agent/{session_id}/pl")
+async def agent_get_pl(session_id: str, year: Optional[int] = None):
+    """Get P&L statement for a fiscal year."""
+    agent, error = _get_agent_for_session(session_id)
+    if error:
+        return error
+    
+    result = agent.get_pl(year)
+    return JSONResponse(content=decimal_to_float(result))
+
+@app.get("/api/agent/{session_id}/balance")
+async def agent_get_balance(session_id: str, year: Optional[int] = None):
+    """Get balance sheet for a fiscal year."""
+    agent, error = _get_agent_for_session(session_id)
+    if error:
+        return error
+    
+    result = agent.get_balance(year)
+    return JSONResponse(content=decimal_to_float(result))
+
+@app.get("/api/agent/{session_id}/kpis")
+async def agent_get_kpis(session_id: str, year: Optional[int] = None):
+    """Get KPIs for a fiscal year."""
+    agent, error = _get_agent_for_session(session_id)
+    if error:
+        return error
+    
+    result = agent.get_kpis(year)
+    return JSONResponse(content=decimal_to_float(result))
+
+@app.get("/api/agent/{session_id}/entries")
+async def agent_get_entries(
+    session_id: str,
+    compte_prefix: Optional[str] = None,
+    year: Optional[int] = None,
+    min_amount: Optional[float] = None,
+    label_contains: Optional[str] = None,
+    limit: int = 100,
+):
+    """Search and filter journal entries."""
+    agent, error = _get_agent_for_session(session_id)
+    if error:
+        return error
+    
+    result = agent.get_entries(
+        compte_prefix=compte_prefix,
+        year=year,
+        min_amount=min_amount,
+        label_contains=label_contains,
+        limit=limit,
+    )
+    return JSONResponse(content=decimal_to_float(result))
+
+@app.get("/api/agent/{session_id}/explain")
+async def agent_explain_variance(
+    session_id: str,
+    metric: str,
+    year_from: int,
+    year_to: int,
+):
+    """Explain what drove the change in a metric between years."""
+    agent, error = _get_agent_for_session(session_id)
+    if error:
+        return error
+    
+    result = agent.explain_variance(metric, year_from, year_to)
+    return JSONResponse(content=decimal_to_float(result))
+
+@app.get("/api/agent/{session_id}/trace")
+async def agent_trace_metric(session_id: str, metric: str, year: int):
+    """Get all source entries for a metric."""
+    agent, error = _get_agent_for_session(session_id)
+    if error:
+        return error
+    
+    result = agent.trace_metric(metric, year)
+    return JSONResponse(content=decimal_to_float(result))
+
+@app.get("/api/agent/{session_id}/anomalies")
+async def agent_find_anomalies(
+    session_id: str,
+    year: Optional[int] = None,
+    z_threshold: float = 2.5,
+):
+    """Find statistically anomalous entries."""
+    agent, error = _get_agent_for_session(session_id)
+    if error:
+        return error
+    
+    result = agent.find_anomalies(year=year, z_threshold=z_threshold)
+    return JSONResponse(content=decimal_to_float(result))
+
 
 @app.delete("/api/session/{session_id}")
 async def delete_session(session_id: str):
