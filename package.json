@@ -17,9 +17,11 @@
     "test:api": "cd apps/api && pytest",
     "test:web": "cd apps/web && npm test",
     "lint": "npm run lint:web",
-    "lint:web": "cd apps/web && npm run lint"
+    "lint:web": "cd apps/web && npm run lint",
+    "generate:types": "openapi-generator-cli generate -c openapi.config.json"
   },
   "devDependencies": {
+    "@openapitools/openapi-generator-cli": "^2.27.0",
     "concurrently": "^8.2.0"
   },
   "engines": {

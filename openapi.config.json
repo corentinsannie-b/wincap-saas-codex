@@ -1,0 +1,12 @@
+{
+  "inputSpec": "http://localhost:8000/openapi.json",
+  "generatorName": "typescript-fetch",
+  "outputDir": "./packages/shared/generated",
+  "packageName": "@wincap/api-types",
+  "packageVersion": "1.0.0",
+  "projectName": "wincap-api-types",
+  "typescriptThreePlus": true,
+  "supportsES6": true,
+  "globalProperty": "namespaces",
+  "globalNamespace": "WincapAPI"
+}

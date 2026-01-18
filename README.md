@@ -55,7 +55,7 @@ npm run dev
 
 # Or run separately:
 npm run dev:api    # Backend on http://localhost:8000
-npm run dev:web    # Frontend on http://localhost:5173
+npm run dev:web    # Frontend on http://localhost:8080
 ```
 
 ### API Endpoints
