@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { Upload, File, AlertCircle } from 'lucide-react';
-import { API_BASE_URL } from '../services/api';
+import { uploadFEC } from '../services/api';
 
 interface UploadInterfaceProps {
   onUploadSuccess: (sessionId: string, files: Array<{ filename: string; entries: number }>) => void;
@@ -74,27 +74,10 @@ export function UploadInterface({ onUploadSuccess, onProcessStart }: UploadInter
     setError(null);
 
     try {
-      const formData = new FormData();
-
       // Handle both single file and multiple files
-      if (Array.isArray(selectedFile)) {
-        selectedFile.forEach((file: File) => {
-          formData.append('files', file);
-        });
-      } else {
-        formData.append('files', selectedFile);
-      }
+      const files = Array.isArray(selectedFile) ? selectedFile : [selectedFile];
 
-      const response = await fetch(`${API_BASE_URL}/api/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = await uploadFEC(files);
       onUploadSuccess(data.session_id, data.files);
       setSelectedFile(null);
       onProcessStart();
