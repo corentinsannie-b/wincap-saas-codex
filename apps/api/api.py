@@ -594,16 +594,21 @@ async def export_xlsx(session_id: str, api_key: str = Depends(verify_api_key)):
     processed = session["processed"]
     session_dir = validate_session_dir(session["dir"])
 
-    # Generate Excel using template
-    template_path = Path(__file__).parent / "templates" / "databook_template.xlsx"
-    template_writer = TemplateWriter(template_path)
+    # Generate Excel with calculated data
+    excel_writer = ExcelWriter(company_name=processed.get("company_name", ""))
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     excel_path = session_dir / f"Databook_{processed['company_name']}_{timestamp}.xlsx"
 
-    template_writer.generate(
-        session.get("entries", []),
-        excel_path,
-        company_name=processed.get("company_name", ""),
+    excel_writer.generate(
+        pl_list=processed.get("pl_list", []),
+        balance_list=processed.get("balance_list", []),
+        kpis_list=processed.get("kpis_list", []),
+        output_path=excel_path,
+        entries=session.get("entries", []),
+        cashflows=processed.get("cashflows", None),
+        monthly_data=processed.get("monthly_data", None),
+        variance_data=processed.get("variance_data", None),
+        detail_data=processed.get("detail_data", None),
     )
 
     return FileResponse(
