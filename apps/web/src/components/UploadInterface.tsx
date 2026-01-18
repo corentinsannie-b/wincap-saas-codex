@@ -82,7 +82,15 @@ export function UploadInterface({ onUploadSuccess, onProcessStart }: UploadInter
       setSelectedFile(null);
       onProcessStart();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      let errorMsg = 'Upload failed';
+      if (err instanceof Error) {
+        errorMsg = err.message;
+      } else if (typeof err === 'string') {
+        errorMsg = err;
+      } else if (err && typeof err === 'object') {
+        errorMsg = JSON.stringify(err);
+      }
+      setError(errorMsg);
     } finally {
       setIsUploading(false);
     }

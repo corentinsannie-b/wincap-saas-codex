@@ -215,6 +215,9 @@ export async function uploadFEC(files: File[]): Promise<UploadResponse> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/upload`, {
       method: 'POST',
+      headers: {
+        'X-API-Key': getAPIKey(),
+      },
       body: formData,
     });
 
