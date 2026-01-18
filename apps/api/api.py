@@ -6,9 +6,11 @@ import asyncio
 import json
 import logging
 import os
+import subprocess
 import tempfile
 import threading
 import uuid
+from uuid import UUID
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -16,8 +18,21 @@ from decimal import Decimal
 from pathlib import Path
 from typing import List, Optional
 
+# Set up environment for WeasyPrint system dependencies (macOS)
+try:
+    glib_path = subprocess.check_output(['brew', '--prefix', 'glib'], text=True).strip()
+    pango_path = subprocess.check_output(['brew', '--prefix', 'pango'], text=True).strip()
+    cairo_path = subprocess.check_output(['brew', '--prefix', 'cairo'], text=True).strip()
+    gobject_path = subprocess.check_output(['brew', '--prefix', 'gobject-introspection'], text=True).strip()
+
+    os.environ['PKG_CONFIG_PATH'] = f"{glib_path}/lib/pkgconfig:{pango_path}/lib/pkgconfig:{cairo_path}/lib/pkgconfig:{gobject_path}/lib/pkgconfig:" + os.environ.get('PKG_CONFIG_PATH', '')
+    os.environ['DYLD_LIBRARY_PATH'] = f"{glib_path}/lib:{pango_path}/lib:{cairo_path}/lib:{gobject_path}/lib:" + os.environ.get('DYLD_LIBRARY_PATH', '')
+except (FileNotFoundError, subprocess.CalledProcessError):
+    # Not on macOS with Homebrew, or dependencies not installed
+    pass
+
 from anthropic import Anthropic
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
@@ -31,7 +46,9 @@ from src.engine.kpi_calculator import KPICalculator
 from src.engine.cashflow_builder import CashFlowBuilder
 from src.engine.monthly_builder import MonthlyBuilder
 from src.engine.variance_builder import VarianceBuilder
+from src.engine.detail_builder import DetailBuilder
 from src.export.excel_writer import ExcelWriter
+from src.export.template_writer import TemplateWriter
 from src.exceptions import FECParsingError, ValidationError
 
 # PDF export is optional - requires system libraries (WeasyPrint)
@@ -49,6 +66,47 @@ from src.agent.tools import DealAgent
 # =============================================================================
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# Authentication Dependency
+# =============================================================================
+
+async def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")) -> str:
+    """Verify API key from request header."""
+    if x_api_key != settings.API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    return x_api_key
+
+def validate_session_id(session_id: str) -> UUID:
+    """Validate and convert session_id string to UUID.
+
+    Raises HTTPException with 400 status if invalid format.
+    """
+    try:
+        return UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID format. Must be a valid UUID.")
+
+def validate_session_dir(session_dir_str: str) -> Path:
+    """Validate that session directory is within allowed temp directory.
+
+    Prevents path traversal attacks by ensuring the path is contained
+    within the configured temp directory.
+
+    Raises HTTPException with 400 status if path is outside temp directory.
+    """
+    try:
+        session_dir = Path(session_dir_str).resolve()
+        temp_dir = Path(settings.UPLOAD_TEMP_DIR).resolve()
+
+        # Ensure the session_dir is within temp_dir
+        session_dir.relative_to(temp_dir)
+        return session_dir
+    except (ValueError, RuntimeError):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid session directory path."
+        )
 
 # =============================================================================
 # Temporary storage for processed data (in production, use Redis/DB)
@@ -182,6 +240,7 @@ async def health_check():
 @app.post("/api/upload")
 async def upload_fec(
     files: List[UploadFile] = File(...),
+    api_key: str = Depends(verify_api_key),
 ):
     """
     Upload FEC file(s) for processing.
@@ -280,7 +339,7 @@ async def upload_fec(
     }
 
 @app.post("/api/process")
-async def process_fec(request: ProcessRequest):
+async def process_fec(request: ProcessRequest, api_key: str = Depends(verify_api_key)):
     """
     Process uploaded FEC data and generate financial statements.
     """
@@ -317,14 +376,55 @@ async def process_fec(request: ProcessRequest):
     monthly_builder = MonthlyBuilder(mapper)
     monthly_revenue = monthly_builder.build_monthly_revenue(all_entries)
 
+    # Build complete monthly data (detailed)
+    monthly_data = {"revenue": monthly_revenue}
+    try:
+        monthly_data["costs"] = monthly_builder.build_monthly_costs(all_entries)
+        monthly_data["ebitda"] = monthly_builder.build_monthly_ebitda(all_entries)
+        monthly_data["quarterly"] = monthly_builder.build_quarterly_summary(all_entries)
+        monthly_data["cumulative"] = monthly_builder.build_cumulative_revenue(all_entries)
+        monthly_data["seasonality"] = monthly_builder.get_seasonality_index(all_entries)
+    except Exception:
+        pass  # Optional detailed monthly data
+
     # Build variance data
-    variance_data = {}
+    variance_builder = VarianceBuilder()
+    variance_data = {
+        "cost_breakdown": variance_builder.build_cost_breakdown_variance(pl_list[-2], pl_list[-1]) if len(pl_list) >= 2 else {},
+        "ebitda_bridge": variance_builder.build_ebitda_bridge(pl_list[-2], pl_list[-1]) if len(pl_list) >= 2 else {},
+    }
+
+    # Build detailed variance data
     if len(pl_list) >= 2:
-        variance_builder = VarianceBuilder()
-        variance_data = {
-            "cost_breakdown": variance_builder.build_cost_breakdown_variance(pl_list[-2], pl_list[-1]),
-            "ebitda_bridge": variance_builder.build_ebitda_bridge(pl_list[-2], pl_list[-1]),
-        }
+        try:
+            variance_data["pl_variance"] = variance_builder.build_pl_variance(pl_list[-2], pl_list[-1])
+            variance_data["revenue_bridge"] = variance_builder.build_revenue_bridge(pl_list[-2], pl_list[-1])
+            variance_data["kpi_evolution"] = variance_builder.build_kpi_evolution(kpis_list)
+        except Exception:
+            pass  # Optional detailed variance
+
+    try:
+        variance_data["bfr_evolution"] = balance_builder.compute_bfr_evolution(balance_list)
+        if len(pl_list) >= 2:
+            variance_data["pl_variations"] = pl_builder.compute_variations(pl_list)
+        variance_data["kpi_synthesis"] = kpi_calculator.build_synthesis_table(kpis_list)
+        if kpis_list:
+            variance_data["qoe_bridge"] = kpi_calculator.build_qoe_bridge(kpis_list[-1])
+    except Exception:
+        pass  # Optional synthesis data
+
+    # Build detail data for Excel export
+    detail_data = {}
+    detail_builder = DetailBuilder(mapper)
+    detail_data["account_summary"] = detail_builder.build_account_summary(all_entries)
+    detail_data["top_accounts"] = detail_builder.build_top_accounts_all_years(all_entries, top_n=20)
+    detail_data["category_breakdown"] = detail_builder.build_category_breakdown_all_years(all_entries)
+
+    years_sorted = sorted(set(e.fiscal_year for e in all_entries))
+    latest_year = years_sorted[-1] if years_sorted else None
+    if latest_year:
+        detail_data["pl_detail"] = detail_builder.build_pl_detail(all_entries, latest_year)
+        detail_data["balance_detail"] = detail_builder.build_balance_detail(all_entries, latest_year)
 
     # Store processed data in session
     session["processed"] = {
@@ -333,8 +433,9 @@ async def process_fec(request: ProcessRequest):
         "balance_list": balance_list,
         "kpis_list": kpis_list,
         "cashflows": cashflows,
-        "monthly_revenue": monthly_revenue,
+        "monthly_data": monthly_data,
         "variance_data": variance_data,
+        "detail_data": detail_data,
     }
 
     # Build response summary
@@ -379,11 +480,12 @@ async def process_fec(request: ProcessRequest):
     }))
 
 @app.get("/api/data/{session_id}")
-async def get_data(session_id: str):
+async def get_data(session_id: str, api_key: str = Depends(verify_api_key)):
     """
     Get full processed data for a session.
     Returns JSON suitable for dashboard consumption.
     """
+    validate_session_id(session_id)
     with SESSIONS_LOCK:
         session = SESSIONS.get(session_id)
     if not session:
@@ -465,29 +567,27 @@ async def get_data(session_id: str):
     return JSONResponse(content=decimal_to_float(data))
 
 @app.get("/api/export/xlsx/{session_id}")
-async def export_xlsx(session_id: str):
+async def export_xlsx(session_id: str, api_key: str = Depends(verify_api_key)):
     """Export processed data as Excel Databook."""
+    validate_session_id(session_id)
     with SESSIONS_LOCK:
         session = SESSIONS.get(session_id)
     if not session or "processed" not in session:
         raise HTTPException(status_code=404, detail="No processed data found.")
 
     processed = session["processed"]
-    session_dir = Path(session["dir"])
+    session_dir = validate_session_dir(session["dir"])
 
-    # Generate Excel
-    excel_writer = ExcelWriter(processed["company_name"])
+    # Generate Excel using template
+    template_path = Path(__file__).parent / "templates" / "databook_template.xlsx"
+    template_writer = TemplateWriter(template_path)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    excel_path = session_dir / f"Databook_{timestamp}.xlsx"
+    excel_path = session_dir / f"Databook_{processed['company_name']}_{timestamp}.xlsx"
 
-    excel_writer.generate(
-        processed["pl_list"],
-        processed["balance_list"],
-        processed["kpis_list"],
+    template_writer.generate(
+        session.get("entries", []),
         excel_path,
-        cashflows=processed.get("cashflows"),
-        monthly_data={"revenue": processed.get("monthly_revenue", {})},
-        variance_data=processed.get("variance_data"),
+        company_name=processed.get("company_name", ""),
     )
 
     return FileResponse(
@@ -497,8 +597,9 @@ async def export_xlsx(session_id: str):
     )
 
 @app.get("/api/export/pdf/{session_id}")
-async def export_pdf(session_id: str):
+async def export_pdf(session_id: str, api_key: str = Depends(verify_api_key)):
     """Export processed data as PDF report."""
+    validate_session_id(session_id)
     if not PDF_AVAILABLE:
         raise HTTPException(
             status_code=503,
@@ -511,7 +612,7 @@ async def export_pdf(session_id: str):
         raise HTTPException(status_code=404, detail="No processed data found.")
 
     processed = session["processed"]
-    session_dir = Path(session["dir"])
+    session_dir = validate_session_dir(session["dir"])
 
     # Generate PDF
     pdf_writer = PDFWriter(processed["company_name"])
@@ -533,17 +634,17 @@ async def export_pdf(session_id: str):
 
 
 @app.get("/api/trace/{session_id}/{metric}/{year}")
-async def get_trace(session_id: str, metric: str, year: int):
+async def get_trace(session_id: str, metric: str, year: int, api_key: str = Depends(verify_api_key)):
     """
     Get trace (provenance) for a specific financial metric.
-    
+
     Shows all journal entries that contributed to a P&L or Balance Sheet line item.
-    
+
     Parameters:
     - session_id: Session identifier from upload
     - metric: Field name (e.g., 'revenue', 'purchases', 'receivables', 'payables')
     - year: Fiscal year to retrieve trace for
-    
+
     Returns:
     {
         "session_id": "...",
@@ -557,6 +658,7 @@ async def get_trace(session_id: str, metric: str, year: int):
         ]
     }
     """
+    validate_session_id(session_id)
     with SESSIONS_LOCK:
         session = SESSIONS.get(session_id)
     if not session or "processed" not in session:
@@ -620,11 +722,12 @@ async def get_trace(session_id: str, metric: str, year: int):
 
 def _get_agent_for_session(session_id: str) -> tuple:
     """Get DealAgent instance for a session.
-    
+
     Returns: (agent, error_response) tuple
     If error: agent is None, error_response is JSONResponse
     If success: agent is DealAgent instance, error_response is None
     """
+    validate_session_id(session_id)
     with SESSIONS_LOCK:
         session = SESSIONS.get(session_id)
     
@@ -645,7 +748,7 @@ def _get_agent_for_session(session_id: str) -> tuple:
     return agent, None
 
 @app.get("/api/agent/{session_id}/summary")
-async def agent_summary(session_id: str):
+async def agent_summary(session_id: str, api_key: str = Depends(verify_api_key)):
     """Get executive summary of the deal."""
     agent, error = _get_agent_for_session(session_id)
     if error:
@@ -655,7 +758,7 @@ async def agent_summary(session_id: str):
     return JSONResponse(content=decimal_to_float(result))
 
 @app.get("/api/agent/{session_id}/pl")
-async def agent_get_pl(session_id: str, year: Optional[int] = None):
+async def agent_get_pl(session_id: str, year: Optional[int] = None, api_key: str = Depends(verify_api_key)):
     """Get P&L statement for a fiscal year."""
     agent, error = _get_agent_for_session(session_id)
     if error:
@@ -665,7 +768,7 @@ async def agent_get_pl(session_id: str, year: Optional[int] = None):
     return JSONResponse(content=decimal_to_float(result))
 
 @app.get("/api/agent/{session_id}/balance")
-async def agent_get_balance(session_id: str, year: Optional[int] = None):
+async def agent_get_balance(session_id: str, year: Optional[int] = None, api_key: str = Depends(verify_api_key)):
     """Get balance sheet for a fiscal year."""
     agent, error = _get_agent_for_session(session_id)
     if error:
@@ -675,7 +778,7 @@ async def agent_get_balance(session_id: str, year: Optional[int] = None):
     return JSONResponse(content=decimal_to_float(result))
 
 @app.get("/api/agent/{session_id}/kpis")
-async def agent_get_kpis(session_id: str, year: Optional[int] = None):
+async def agent_get_kpis(session_id: str, year: Optional[int] = None, api_key: str = Depends(verify_api_key)):
     """Get KPIs for a fiscal year."""
     agent, error = _get_agent_for_session(session_id)
     if error:
@@ -692,7 +795,7 @@ async def agent_get_entries(
     min_amount: Optional[float] = None,
     label_contains: Optional[str] = None,
     limit: int = 100,
-):
+    api_key: str = Depends(verify_api_key)):
     """Search and filter journal entries."""
     agent, error = _get_agent_for_session(session_id)
     if error:
@@ -713,7 +816,7 @@ async def agent_explain_variance(
     metric: str,
     year_from: int,
     year_to: int,
-):
+    api_key: str = Depends(verify_api_key)):
     """Explain what drove the change in a metric between years."""
     agent, error = _get_agent_for_session(session_id)
     if error:
@@ -723,7 +826,7 @@ async def agent_explain_variance(
     return JSONResponse(content=decimal_to_float(result))
 
 @app.get("/api/agent/{session_id}/trace")
-async def agent_trace_metric(session_id: str, metric: str, year: int):
+async def agent_trace_metric(session_id: str, metric: str, year: int, api_key: str = Depends(verify_api_key)):
     """Get all source entries for a metric."""
     agent, error = _get_agent_for_session(session_id)
     if error:
@@ -737,7 +840,7 @@ async def agent_find_anomalies(
     session_id: str,
     year: Optional[int] = None,
     z_threshold: float = 2.5,
-):
+    api_key: str = Depends(verify_api_key)):
     """Find statistically anomalous entries."""
     agent, error = _get_agent_for_session(session_id)
     if error:
@@ -938,7 +1041,7 @@ def _execute_tool(agent: DealAgent, tool_name: str, tool_input: dict) -> dict:
 
 
 @app.post("/api/agent/{session_id}/chat")
-async def agent_chat(session_id: str, request: ChatRequest):
+async def agent_chat(session_id: str, request: ChatRequest, api_key: str = Depends(verify_api_key)):
     """
     Chat with Claude about financial data using tool calling.
 
@@ -1047,16 +1150,19 @@ Fournis des analyses structurées avec des insights clairs."""
 
 
 @app.delete("/api/session/{session_id}")
-async def delete_session(session_id: str):
+async def delete_session(session_id: str, api_key: str = Depends(verify_api_key)):
     """Clean up a session and its temporary files."""
+    validate_session_id(session_id)
     with SESSIONS_LOCK:
         session = SESSIONS.pop(session_id, None)
     if session:
         # Clean up temp files
-        session_dir = Path(session.get("dir", ""))
-        if session_dir.exists():
-            import shutil
-            shutil.rmtree(session_dir, ignore_errors=True)
+        session_dir_str = session.get("dir", "")
+        if session_dir_str:
+            session_dir = validate_session_dir(session_dir_str)
+            if session_dir.exists():
+                import shutil
+                shutil.rmtree(session_dir, ignore_errors=True)
         return {"status": "deleted", "session_id": session_id}
 
     raise HTTPException(status_code=404, detail="Session not found.")

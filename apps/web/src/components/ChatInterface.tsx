@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Send, ChevronLeft, Loader } from 'lucide-react';
+import { API_BASE_URL } from '../services/api';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -22,8 +23,6 @@ export function ChatInterface({ sessionId, onBack }: ChatInterfaceProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

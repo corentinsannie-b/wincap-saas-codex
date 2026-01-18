@@ -6,12 +6,13 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from src.models.financials import BalanceSheet, KPIs, ProfitLoss
 from src.models.entry import JournalEntry
+from src.engine.statement_schema import BALANCE_REPORT_LINES, PL_REPORT_LINES
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -336,38 +337,15 @@ class ExcelWriter:
 
         data_row = self._write_export_header(ws, 5, years, unit_label="En k€", include_variations=True)
 
-        # P&L lines
-        pl_lines = [
-            ("Chiffre d'affaires", "revenue", False),
-            ("Autres produits", "other_revenue", False),
-            ("Production", "production", True),
-            ("", None, False),  # Empty row
-            ("Achats", "purchases", False),
-            ("Charges externes", "external_charges", False),
-            ("Impôts et taxes", "taxes", False),
-            ("Charges de personnel", "personnel", False),
-            ("Autres charges", "other_charges", False),
-            ("Total charges", "total_charges", True),
-            ("", None, False),
-            ("EBITDA", "ebitda", True),
-            ("Marge EBITDA (%)", "ebitda_margin", True),
-            ("", None, False),
-            ("Dotations aux amortissements", "depreciation", False),
-            ("EBIT", "ebit", True),
-            ("", None, False),
-            ("Résultat financier", "financial_result", False),
-            ("Résultat exceptionnel", "exceptional_result", False),
-            ("Impôt sur les sociétés", "income_tax", False),
-            ("", None, False),
-            ("Résultat Net", "net_income", True),
-        ]
-
         row = data_row
         var_pairs = self._variation_pairs(years)
-        for label, attr, is_total in pl_lines:
-            if attr is None:
+        for item in PL_REPORT_LINES:
+            if item["line_type"] == "spacer":
                 row += 1
                 continue
+            label = item["label"]
+            attr = item["attr"]
+            is_total = item["is_total"]
 
             # Label
             cell = ws.cell(row=row, column=cols["label_col"], value=label)
@@ -396,7 +374,7 @@ class ExcelWriter:
                 cell.number_format = FORMAT_PERCENT if is_percent else FORMAT_NUMBER
 
             # Variation column
-            if var_pairs and not attr.endswith("margin"):
+            if var_pairs and attr and "margin" not in attr:
                 values_by_year = {pl.year: getattr(pl, attr, Decimal("0")) for pl in pl_list}
                 for idx, (curr, prev) in enumerate(var_pairs):
                     prev_val = values_by_year.get(prev, Decimal("0"))
@@ -442,30 +420,14 @@ class ExcelWriter:
             year_labels=year_labels,
         )
 
-        # Balance lines
-        balance_lines = [
-            ("ACTIF", None, "section"),
-            ("Immobilisations nettes", "fixed_assets", False),
-            ("Stocks", "inventory", False),
-            ("Créances clients", "receivables", False),
-            ("Autres créances", "other_receivables", False),
-            ("Trésorerie", "cash", False),
-            ("Total Actif", "total_assets", True),
-            ("", None, None),
-            ("PASSIF", None, "section"),
-            ("Capitaux propres", "equity", False),
-            ("Provisions", "provisions", False),
-            ("Dettes financières", "financial_debt", False),
-            ("Dettes fournisseurs", "payables", False),
-            ("Autres dettes", "other_payables", False),
-            ("Total Passif", "total_liabilities", True),
-        ]
-
         row = data_row
-        for label, attr, style in balance_lines:
-            if attr is None and style is None:
+        for item in BALANCE_REPORT_LINES:
+            if item["line_type"] == "spacer":
                 row += 1
                 continue
+            label = item["label"]
+            attr = item["attr"]
+            style = "section" if item["line_type"] == "section" else (True if item["is_total"] else False)
 
             # Label
             cell = ws.cell(row=row, column=cols["label_col"], value=label)
@@ -1088,6 +1050,98 @@ class ExcelWriter:
             for col in range(2, 5):
                 ws.column_dimensions[get_column_letter(col)].width = COL_WIDTH_NUMBER
 
+        # Top accounts by year sheet
+        if "top_accounts_year" in detail_data and detail_data["top_accounts_year"]:
+            data = detail_data["top_accounts_year"]
+            year = data.get("year")
+            ws = self.workbook.create_sheet(f"Top Comptes FY{year}")
+
+            ws.merge_cells("A1:E1")
+            ws["A1"] = f"TOP COMPTES FY{year}"
+            ws["A1"].font = FONT_TITLE
+            ws["A1"].fill = FILL_TITLE
+            ws["A1"].alignment = ALIGN_CENTER
+
+            headers = ["Compte", "Libellé", "Montant (k€)", "Catégorie", "Type"]
+            for col, header in enumerate(headers, start=1):
+                cell = ws.cell(row=3, column=col, value=header)
+                cell.font = FONT_HEADER
+                cell.fill = FILL_HEADER
+                cell.alignment = ALIGN_CENTER
+                cell.border = BORDER_ALL
+
+            row = 4
+            for account in data.get("revenue", []):
+                ws.cell(row=row, column=1, value=account.get("account", "")).border = BORDER_ALL
+                ws.cell(row=row, column=2, value=account.get("label", "")).border = BORDER_ALL
+                cell = ws.cell(row=row, column=3, value=float(account.get("amount", 0)) / 1000)
+                cell.number_format = FORMAT_NUMBER
+                cell.alignment = ALIGN_RIGHT
+                cell.border = BORDER_ALL
+                ws.cell(row=row, column=4, value=account.get("category", "")).border = BORDER_ALL
+                ws.cell(row=row, column=5, value="Revenue").border = BORDER_ALL
+                row += 1
+
+            for account in data.get("expenses", []):
+                ws.cell(row=row, column=1, value=account.get("account", "")).border = BORDER_ALL
+                ws.cell(row=row, column=2, value=account.get("label", "")).border = BORDER_ALL
+                cell = ws.cell(row=row, column=3, value=float(account.get("amount", 0)) / 1000)
+                cell.number_format = FORMAT_NUMBER
+                cell.alignment = ALIGN_RIGHT
+                cell.border = BORDER_ALL
+                ws.cell(row=row, column=4, value=account.get("category", "")).border = BORDER_ALL
+                ws.cell(row=row, column=5, value="Expense").border = BORDER_ALL
+                row += 1
+
+            ws.column_dimensions["A"].width = 14
+            ws.column_dimensions["B"].width = 40
+            ws.column_dimensions["C"].width = COL_WIDTH_NUMBER
+            ws.column_dimensions["D"].width = 24
+            ws.column_dimensions["E"].width = 12
+
+        # Journal extract sheet
+        if "journal_extract" in detail_data and detail_data["journal_extract"]:
+            data = detail_data["journal_extract"]
+            year = data.get("year")
+            ws = self.workbook.create_sheet(f"Journal FY{year}")
+
+            ws.merge_cells("A1:F1")
+            ws["A1"] = f"EXTRAIT JOURNAL FY{year}"
+            ws["A1"].font = FONT_TITLE
+            ws["A1"].fill = FILL_TITLE
+            ws["A1"].alignment = ALIGN_CENTER
+
+            headers = ["Date", "Compte", "Libellé", "Débit", "Crédit", "Catégorie"]
+            for col, header in enumerate(headers, start=1):
+                cell = ws.cell(row=3, column=col, value=header)
+                cell.font = FONT_HEADER
+                cell.fill = FILL_HEADER
+                cell.alignment = ALIGN_CENTER
+                cell.border = BORDER_ALL
+
+            row = 4
+            for entry in data.get("entries", []):
+                ws.cell(row=row, column=1, value=entry.get("date", "")).border = BORDER_ALL
+                ws.cell(row=row, column=2, value=entry.get("account", "")).border = BORDER_ALL
+                ws.cell(row=row, column=3, value=entry.get("label", "")).border = BORDER_ALL
+                cell = ws.cell(row=row, column=4, value=float(entry.get("debit", 0)))
+                cell.number_format = FORMAT_NUMBER
+                cell.alignment = ALIGN_RIGHT
+                cell.border = BORDER_ALL
+                cell = ws.cell(row=row, column=5, value=float(entry.get("credit", 0)))
+                cell.number_format = FORMAT_NUMBER
+                cell.alignment = ALIGN_RIGHT
+                cell.border = BORDER_ALL
+                ws.cell(row=row, column=6, value=entry.get("category", "")).border = BORDER_ALL
+                row += 1
+
+            ws.column_dimensions["A"].width = 12
+            ws.column_dimensions["B"].width = 12
+            ws.column_dimensions["C"].width = 50
+            ws.column_dimensions["D"].width = COL_WIDTH_NUMBER
+            ws.column_dimensions["E"].width = COL_WIDTH_NUMBER
+            ws.column_dimensions["F"].width = 24
+
 
 def export_dashboard_json(
     pl_list: List[ProfitLoss],
@@ -1203,3 +1257,76 @@ def export_dashboard_json(
         json.dump(dashboard_data, f, indent=2, ensure_ascii=False)
 
     return output_path
+
+
+def append_trace_sheet(excel_path: Union[str, Path], trace_data: Dict[str, object]) -> None:
+    """Append TRACE sheet to an existing Excel file."""
+    excel_path = Path(excel_path)
+    if not excel_path.exists():
+        return
+    workbook = load_workbook(excel_path)
+    if "TRACE" in workbook.sheetnames:
+        del workbook["TRACE"]
+    sheet = workbook.create_sheet("TRACE")
+
+    headers = [
+        "KPI",
+        "Year",
+        "Category",
+        "Account",
+        "Account Amount",
+        "Entry ID",
+        "Entry Date",
+        "Journal",
+        "Label",
+        "Entry Amount",
+    ]
+    sheet.append(headers)
+
+    for kpi in trace_data.get("kpis", []):
+        kpi_name = kpi.get("name")
+        year = kpi.get("year")
+        for category in kpi.get("categories", []):
+            category_name = category.get("name")
+            for account in category.get("accounts", []):
+                account_num = account.get("account")
+                account_amount = account.get("amount")
+                top_entries = account.get("top_entries", [])
+                if not top_entries:
+                    sheet.append(
+                        [
+                            kpi_name,
+                            year,
+                            category_name,
+                            account_num,
+                            account_amount,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                        ]
+                    )
+                    continue
+                for entry in top_entries:
+                    sheet.append(
+                        [
+                            kpi_name,
+                            year,
+                            category_name,
+                            account_num,
+                            account_amount,
+                            entry.get("entry_id"),
+                            entry.get("date"),
+                            entry.get("journal"),
+                            entry.get("label"),
+                            entry.get("amount"),
+                        ]
+                    )
+
+    # Basic column width auto-size
+    for col_idx, _ in enumerate(headers, start=1):
+        col_letter = get_column_letter(col_idx)
+        sheet.column_dimensions[col_letter].width = 18
+
+    workbook.save(excel_path)

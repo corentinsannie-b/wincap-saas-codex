@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Download, AlertTriangle, TrendingUp, TrendingDown, Loader } from 'lucide-react';
+import { API_BASE_URL } from '../services/api';
 
 interface EnrichedDashboardProps {
   sessionId: string;
@@ -49,8 +50,6 @@ export function EnrichedDashboard({ sessionId, companyName = 'Company', onShowCh
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -76,12 +75,12 @@ export function EnrichedDashboard({ sessionId, companyName = 'Company', onShowCh
     };
 
     fetchData();
-  }, [sessionId, API_BASE_URL]);
+  }, [sessionId]);
 
   const handleDownloadExcel = async () => {
     setDownloadingExcel(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/export/xlsx?session_id=${sessionId}`);
+      const response = await fetch(`${API_BASE_URL}/api/export/xlsx/${sessionId}`);
       if (!response.ok) throw new Error('Download failed');
 
       const blob = await response.blob();
@@ -103,7 +102,7 @@ export function EnrichedDashboard({ sessionId, companyName = 'Company', onShowCh
   const handleDownloadPdf = async () => {
     setDownloadingPdf(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/export/pdf?session_id=${sessionId}`);
+      const response = await fetch(`${API_BASE_URL}/api/export/pdf/${sessionId}`);
       if (!response.ok) throw new Error('Download failed');
 
       const blob = await response.blob();

@@ -22,7 +22,7 @@ class TemplateWriter:
 
     # FEC sheet structure
     FEC_HEADER_ROW = 9
-    FEC_DATA_START_ROW = 10
+    FEC_DATA_START_ROW = 11
 
     # Data columns to populate (non-formula columns)
     FEC_DATA_COLUMNS = {
@@ -52,6 +52,8 @@ class TemplateWriter:
 
     # Formula templates for calculated columns
     FEC_FORMULAS = {
+        7: '=IFERROR(\n    IF($C{row}="A Nouveaux Détaillés",\n        DATE(2000 + RIGHT(F{row}, 2), 1, 1),\n        DATE(LEFT(E{row}, 4), MID(E{row}, 5, 2), RIGHT(E{row}, 2))\n    ),\n    ""\n)',  # Date
+        8: '=EOMONTH(G{row},0)',  # Mois
         10: '=_xlfn.XLOOKUP($I{row},BG!$B:$B,BG!L:L)',  # Mapping 1
         11: '=_xlfn.XLOOKUP($I{row},BG!$B:$B,BG!M:M)',  # Mapping 2
         12: '=_xlfn.XLOOKUP($I{row},BG!$B:$B,BG!N:N)',  # Mapping 3
@@ -148,10 +150,9 @@ class TemplateWriter:
         ws.cell(row=row, column=4, value=row - self.FEC_DATA_START_ROW + 1)  # EcritureNum
         ws.cell(row=row, column=5, value=int(entry.date.strftime("%Y%m%d")))  # EcritureDate
         ws.cell(row=row, column=6, value=f"FY{str(entry.effective_year)[-2:]}")  # Exercice
-        ws.cell(row=row, column=7, value=entry.date)  # Date
-        ws.cell(row=row, column=8, value=entry.date.replace(day=1))  # Mois (month start)
-        # CompteNum - must be integer for XLOOKUP to match BG accounts
-        ws.cell(row=row, column=9, value=int(entry.account_num))
+        # Columns 7-8 (Date, Mois) are now formulas set below
+        # CompteNum - keep as string to match BG sheet text values for XLOOKUP
+        ws.cell(row=row, column=9, value=entry.account_num)
 
         # Formula columns (10-14, 23, 24)
         for col, formula_template in self.FEC_FORMULAS.items():

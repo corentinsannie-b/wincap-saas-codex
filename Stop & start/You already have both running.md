@@ -1,0 +1,9 @@
+  You already have both running. To restart cleanly:                                                                                                                                                           
+                                                                                                                                                                                                               
+  # Stop everything                                                                                                                                                                                            
+  pkill -f uvicorn                                                                                                                                                                                             
+  pkill -f vite                                                                                                                                                                                                
+                                                                                                                                                                                                               
+  # Start with one command                                                                                                                                                                                     
+  cd /Users/ameliolebon/Desktop/Cresus/wincap-saas-codex                                                                                                                                                       
+  ./start-dev.sh                                                                                                                                                                                               

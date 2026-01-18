@@ -155,7 +155,7 @@ def mock_settings(monkeypatch):
     settings.UPLOAD_TEMP_DIR = "/tmp/wincap"
     settings.MAX_FILE_SIZE = 50 * 1024 * 1024
     settings.ALLOWED_EXTENSIONS = {".txt"}
-    settings.SESSION_TTL_HOURS = 24
+    settings.SESSION_TTL_HOURS = 6
     settings.LOG_LEVEL = "INFO"
     settings.LOG_FILE = None
     return settings

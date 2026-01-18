@@ -4,7 +4,47 @@
  * Frontend service to communicate with the FastAPI backend
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+/**
+ * Validate and get API base URL from environment.
+ * Throws an error if VITE_API_URL is not set in production.
+ */
+function getApiBaseUrl(): string {
+  const apiUrl = import.meta.env.VITE_API_URL;
+
+  if (!apiUrl) {
+    const isDev = import.meta.env.DEV;
+    if (isDev) {
+      console.warn('⚠️ VITE_API_URL not set. Using default http://localhost:8000');
+      return 'http://localhost:8000';
+    }
+    throw new Error(
+      'FATAL: VITE_API_URL environment variable is not set. ' +
+      'Please set VITE_API_URL in your .env file before building.'
+    );
+  }
+
+  return apiUrl;
+}
+
+export const API_BASE_URL = getApiBaseUrl();
+export const API_KEY = import.meta.env.VITE_API_KEY || 'development-api-key-change-in-production';
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+/**
+ * Get default fetch headers including API authentication
+ */
+function getHeaders(includeJson: boolean = true): HeadersInit {
+  const headers: HeadersInit = {
+    'X-API-Key': API_KEY,
+  };
+  if (includeJson) {
+    headers['Content-Type'] = 'application/json';
+  }
+  return headers;
+}
 
 // =============================================================================
 // Types
@@ -157,7 +197,9 @@ export interface AnomaliesResult {
  * Check API health
  */
 export async function checkHealth(): Promise<{ status: string; version: string }> {
-  const response = await fetch(`${API_BASE_URL}/api/health`);
+  const response = await fetch(`${API_BASE_URL}/api/health`, {
+    headers: getHeaders(false),
+  });
   if (!response.ok) {
     throw new Error('API is not available');
   }
@@ -175,6 +217,7 @@ export async function uploadFEC(files: File[]): Promise<UploadResponse> {
 
   const response = await fetch(`${API_BASE_URL}/api/upload`, {
     method: 'POST',
+    headers: { 'X-API-Key': API_KEY },
     body: formData,
   });
 
@@ -192,9 +235,7 @@ export async function uploadFEC(files: File[]): Promise<UploadResponse> {
 export async function processFEC(request: ProcessRequest): Promise<ProcessResponse> {
   const response = await fetch(`${API_BASE_URL}/api/process`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: getHeaders(),
     body: JSON.stringify(request),
   });
 
@@ -210,7 +251,9 @@ export async function processFEC(request: ProcessRequest): Promise<ProcessRespon
  * Get full financial data for dashboard
  */
 export async function getFinancialData(sessionId: string): Promise<FinancialData> {
-  const response = await fetch(`${API_BASE_URL}/api/data/${sessionId}`);
+  const response = await fetch(`${API_BASE_URL}/api/data/${sessionId}`, {
+    headers: getHeaders(false),
+  });
 
   if (!response.ok) {
     const error = await response.json();
@@ -224,7 +267,9 @@ export async function getFinancialData(sessionId: string): Promise<FinancialData
  * Download Excel export
  */
 export async function downloadExcel(sessionId: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/export/xlsx/${sessionId}`);
+  const response = await fetch(`${API_BASE_URL}/api/export/xlsx/${sessionId}`, {
+    headers: getHeaders(false),
+  });
 
   if (!response.ok) {
     const error = await response.json();
@@ -246,7 +291,9 @@ export async function downloadExcel(sessionId: string): Promise<void> {
  * Download PDF export
  */
 export async function downloadPDF(sessionId: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/export/pdf/${sessionId}`);
+  const response = await fetch(`${API_BASE_URL}/api/export/pdf/${sessionId}`, {
+    headers: getHeaders(false),
+  });
 
   if (!response.ok) {
     const error = await response.json();
@@ -270,6 +317,7 @@ export async function downloadPDF(sessionId: string): Promise<void> {
 export async function deleteSession(sessionId: string): Promise<void> {
   await fetch(`${API_BASE_URL}/api/session/${sessionId}`, {
     method: 'DELETE',
+    headers: getHeaders(false),
   });
 }
 
@@ -281,7 +329,10 @@ export async function deleteSession(sessionId: string): Promise<void> {
  * Get executive summary of the deal
  */
 export async function getAgentSummary(sessionId: string): Promise<AgentSummary> {
-  const response = await fetch(`${API_BASE_URL}/api/agent/${sessionId}/summary`);
+  const response = await fetch(`${API_BASE_URL}/api/agent/${sessionId}/summary`
+, {
+    headers: getHeaders(false),
+  });
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to fetch summary');

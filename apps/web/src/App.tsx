@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { UploadInterface } from './components/UploadInterface';
 import { EnrichedDashboard } from './components/EnrichedDashboard';
 import { ChatInterface } from './components/ChatInterface';
+import { API_BASE_URL } from './services/api';
 
 type AppState = 'upload' | 'processing' | 'dashboard' | 'chat';
 
@@ -30,8 +31,6 @@ export default function App() {
     setAppState('processing');
 
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
       // Call process endpoint
       const response = await fetch(`${API_BASE_URL}/api/process`, {
         method: 'POST',

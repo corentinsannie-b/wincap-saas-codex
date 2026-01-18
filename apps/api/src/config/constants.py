@@ -193,8 +193,8 @@ DEFAULT_LOG_LEVEL = "INFO"
 # Session Management
 # =============================================================================
 
-DEFAULT_SESSION_TTL_HOURS = 24
-DEFAULT_CLEANUP_INTERVAL_HOURS = 6
+DEFAULT_SESSION_TTL_HOURS = 6
+DEFAULT_CLEANUP_INTERVAL_HOURS = 1
 
 # =============================================================================
 # Analysis Thresholds (for optional warnings)

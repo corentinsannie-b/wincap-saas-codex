@@ -47,7 +47,7 @@
                     {% for row in synthesis_data %}
                     <tr>
                         <td>{{ row.label }}</td>
-                        {% for value in row.values %}
+                        {% for value in row['values'] %}
                         <td class="number">{{ value }}</td>
                         {% endfor %}
                     </tr>
@@ -88,7 +88,7 @@
                 {% for row in pl_data %}
                 <tr class="{{ 'total-row' if row.is_total else '' }}">
                     <td>{{ row.label }}</td>
-                    {% for value in row.values %}
+                    {% for value in row['values'] %}
                     <td class="number">{{ value }}</td>
                     {% endfor %}
                     {% if years|length >= 2 %}
@@ -126,7 +126,7 @@
                 {% for row in balance_data %}
                 <tr class="{{ 'section-row' if row.is_section else 'total-row' if row.is_total else '' }}">
                     <td>{{ row.label }}</td>
-                    {% for value in row.values %}
+                    {% for value in row['values'] %}
                     <td class="number">{{ value }}</td>
                     {% endfor %}
                 </tr>
@@ -152,7 +152,7 @@
                 {% for row in bfr_data %}
                 <tr class="{{ 'total-row' if row.is_total else '' }}">
                     <td>{{ row.label }}</td>
-                    {% for value in row.values %}
+                    {% for value in row['values'] %}
                     <td class="number">{{ value }}</td>
                     {% endfor %}
                 </tr>
@@ -196,7 +196,7 @@
                 {% for row in kpi_data %}
                 <tr>
                     <td>{{ row.label }}</td>
-                    {% for value in row.values %}
+                    {% for value in row['values'] %}
                     <td class="number">{{ value }}</td>
                     {% endfor %}
                 </tr>

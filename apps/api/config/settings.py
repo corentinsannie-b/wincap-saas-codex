@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     API_HOST: str = os.getenv("API_HOST", "localhost")
     API_PORT: int = int(os.getenv("API_PORT", "8000"))
     API_WORKERS: int = int(os.getenv("API_WORKERS", "1"))
+    API_KEY: str = os.getenv("API_KEY", "development-api-key-change-in-production")
 
     # =========================================================================
     # CORS Configuration
@@ -30,13 +31,13 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = [
         origin.strip()
         for origin in os.getenv(
-            "CORS_ORIGINS", "http://localhost:5173,http://localhost:3000"
+            "CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost:8080"
         ).split(",")
     ]
     CORS_ALLOW_CREDENTIALS: bool = os.getenv("CORS_ALLOW_CREDENTIALS", "true").lower() == "true"
     CORS_ALLOW_METHODS: List[str] = [
         method.strip()
-        for method in os.getenv("CORS_ALLOW_METHODS", "GET,POST").split(",")
+        for method in os.getenv("CORS_ALLOW_METHODS", "GET,POST,DELETE").split(",")
     ]
     CORS_ALLOW_HEADERS: List[str] = [
         header.strip() for header in os.getenv("CORS_ALLOW_HEADERS", "*").split(",")
