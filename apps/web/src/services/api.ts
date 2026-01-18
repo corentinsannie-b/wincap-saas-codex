@@ -36,7 +36,9 @@ export const API_BASE_URL = getApiBaseUrl();
  * Get default fetch headers for API requests
  */
 function getHeaders(includeJson: boolean = true): HeadersInit {
-  const headers: HeadersInit = {};
+  const headers: HeadersInit = {
+    'X-API-Key': 'development-api-key-change-in-production',
+  };
   if (includeJson) {
     headers['Content-Type'] = 'application/json';
   }
@@ -215,9 +217,7 @@ export async function uploadFEC(files: File[]): Promise<UploadResponse> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/upload`, {
       method: 'POST',
-      headers: {
-        'X-API-Key': getAPIKey(),
-      },
+      headers: getHeaders(false),
       body: formData,
     });
 
