@@ -27,19 +27,16 @@ function getApiBaseUrl(): string {
 }
 
 export const API_BASE_URL = getApiBaseUrl();
-export const API_KEY = import.meta.env.VITE_API_KEY || 'development-api-key-change-in-production';
 
 // =============================================================================
 // Helper Functions
 // =============================================================================
 
 /**
- * Get default fetch headers including API authentication
+ * Get default fetch headers for API requests
  */
 function getHeaders(includeJson: boolean = true): HeadersInit {
-  const headers: HeadersInit = {
-    'X-API-Key': API_KEY,
-  };
+  const headers: HeadersInit = {};
   if (includeJson) {
     headers['Content-Type'] = 'application/json';
   }
@@ -215,18 +212,31 @@ export async function uploadFEC(files: File[]): Promise<UploadResponse> {
     formData.append('files', file);
   });
 
-  const response = await fetch(`${API_BASE_URL}/api/upload`, {
-    method: 'POST',
-    headers: { 'X-API-Key': API_KEY },
-    body: formData,
-  });
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/upload`, {
+      method: 'POST',
+      body: formData,
+    });
 
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || 'Failed to upload files');
+    if (!response.ok) {
+      let errorMessage = 'Failed to upload files';
+      try {
+        const error = await response.json();
+        errorMessage = error.detail || error.message || errorMessage;
+      } catch (e) {
+        // Response is not JSON, use status text
+        errorMessage = `Upload failed: ${response.statusText} (${response.status})`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Upload error: ${error.message}`);
+    }
+    throw error;
   }
-
-  return response.json();
 }
 
 /**
@@ -346,7 +356,9 @@ export async function getAgentSummary(sessionId: string): Promise<AgentSummary> 
 export async function getAgentPL(sessionId: string, year?: number): Promise<any> {
   const url = new URL(`${API_BASE_URL}/api/agent/${sessionId}/pl`);
   if (year) url.searchParams.set('year', year.toString());
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    headers: getHeaders(false),
+  });
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to fetch P&L');
@@ -360,7 +372,9 @@ export async function getAgentPL(sessionId: string, year?: number): Promise<any>
 export async function getAgentBalance(sessionId: string, year?: number): Promise<any> {
   const url = new URL(`${API_BASE_URL}/api/agent/${sessionId}/balance`);
   if (year) url.searchParams.set('year', year.toString());
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    headers: getHeaders(false),
+  });
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to fetch balance sheet');
@@ -374,7 +388,9 @@ export async function getAgentBalance(sessionId: string, year?: number): Promise
 export async function getAgentKPIs(sessionId: string, year?: number): Promise<any> {
   const url = new URL(`${API_BASE_URL}/api/agent/${sessionId}/kpis`);
   if (year) url.searchParams.set('year', year.toString());
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    headers: getHeaders(false),
+  });
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to fetch KPIs');
@@ -403,7 +419,9 @@ export async function getAgentEntries(
     if (options.label_contains) url.searchParams.set('label_contains', options.label_contains);
     if (options.limit) url.searchParams.set('limit', options.limit.toString());
   }
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    headers: getHeaders(false),
+  });
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to fetch entries');
@@ -424,7 +442,9 @@ export async function getAgentExplainVariance(
   url.searchParams.set('metric', metric);
   url.searchParams.set('year_from', yearFrom.toString());
   url.searchParams.set('year_to', yearTo.toString());
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    headers: getHeaders(false),
+  });
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to explain variance');
@@ -443,7 +463,9 @@ export async function getAgentTrace(
   const url = new URL(`${API_BASE_URL}/api/agent/${sessionId}/trace`);
   url.searchParams.set('metric', metric);
   url.searchParams.set('year', year.toString());
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    headers: getHeaders(false),
+  });
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to fetch trace');
@@ -462,7 +484,9 @@ export async function getAgentAnomalies(
   const url = new URL(`${API_BASE_URL}/api/agent/${sessionId}/anomalies`);
   if (year) url.searchParams.set('year', year.toString());
   if (zThreshold) url.searchParams.set('z_threshold', zThreshold.toString());
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    headers: getHeaders(false),
+  });
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to fetch anomalies');
@@ -479,9 +503,7 @@ export async function sendChatMessage(
 ): Promise<{ role: string; content: string }> {
   const response = await fetch(`${API_BASE_URL}/api/agent/${sessionId}/chat`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: getHeaders(),
     body: JSON.stringify({ message }),
   });
 

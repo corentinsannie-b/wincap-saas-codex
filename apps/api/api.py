@@ -237,6 +237,21 @@ async def health_check():
         timestamp=datetime.now().isoformat()
     )
 
+@app.options("/api/upload")
+async def upload_options():
+    """Handle CORS preflight for upload endpoint."""
+    return JSONResponse(
+        content={},
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, X-API-Key",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "3600",
+        }
+    )
+
 @app.post("/api/upload")
 async def upload_fec(
     files: List[UploadFile] = File(...),
@@ -261,6 +276,7 @@ async def upload_fec(
     - 400: Invalid file type or size
     - 400: Invalid FEC format
     """
+    logger.info(f"Upload endpoint received {len(files) if files else 0} files")
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
 

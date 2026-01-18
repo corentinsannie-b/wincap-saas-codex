@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Download, AlertTriangle, TrendingUp, TrendingDown, Loader } from 'lucide-react';
-import { API_BASE_URL } from '../services/api';
+import { getAgentSummary, getAgentAnomalies, downloadExcel, downloadPDF } from '../services/api';
 
 interface EnrichedDashboardProps {
   sessionId: string;
@@ -57,16 +57,12 @@ export function EnrichedDashboard({ sessionId, companyName = 'Company', onShowCh
         setError(null);
 
         // Fetch summary
-        const summaryRes = await fetch(`${API_BASE_URL}/api/agent/${sessionId}/summary`);
-        if (!summaryRes.ok) throw new Error('Failed to fetch summary');
-        const summaryData = await summaryRes.json();
+        const summaryData = await getAgentSummary(sessionId);
         setSummary(summaryData);
 
         // Fetch anomalies
-        const anomaliesRes = await fetch(`${API_BASE_URL}/api/agent/${sessionId}/anomalies`);
-        if (!anomaliesRes.ok) throw new Error('Failed to fetch anomalies');
-        const anomaliesData = await anomaliesRes.json();
-        setAnomalies(anomaliesData.anomalies || []);
+        const anomaliesData = await getAgentAnomalies(sessionId);
+        setAnomalies(anomaliesData.entries || []);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load dashboard');
       } finally {
@@ -80,18 +76,7 @@ export function EnrichedDashboard({ sessionId, companyName = 'Company', onShowCh
   const handleDownloadExcel = async () => {
     setDownloadingExcel(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/export/xlsx/${sessionId}`);
-      if (!response.ok) throw new Error('Download failed');
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${companyName}_Databook.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      await downloadExcel(sessionId);
     } catch (err) {
       setError('Failed to download Excel file');
     } finally {
@@ -102,18 +87,7 @@ export function EnrichedDashboard({ sessionId, companyName = 'Company', onShowCh
   const handleDownloadPdf = async () => {
     setDownloadingPdf(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/export/pdf/${sessionId}`);
-      if (!response.ok) throw new Error('Download failed');
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${companyName}_Report.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      await downloadPDF(sessionId);
     } catch (err) {
       setError('Failed to download PDF file');
     } finally {

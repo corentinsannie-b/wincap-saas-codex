@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Send, ChevronLeft, Loader } from 'lucide-react';
-import { API_BASE_URL } from '../services/api';
+import { sendChatMessage } from '../services/api';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -49,19 +49,7 @@ export function ChatInterface({ sessionId, onBack }: ChatInterfaceProps) {
     // Send to API
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/agent/${sessionId}/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message: userMessage }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = await sendChatMessage(sessionId, userMessage);
 
       // Add assistant response
       setMessages([

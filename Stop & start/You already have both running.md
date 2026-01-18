@@ -5,5 +5,5 @@
   pkill -f vite                                                                                                                                                                                                
                                                                                                                                                                                                                
   # Start with one command                                                                                                                                                                                     
-  cd /Users/ameliolebon/Desktop/Cresus/wincap-saas-codex                                                                                                                                                       
+  cd /Users/amelielebon/Desktop/Cresus/wincap-saas-codex                                                                                                                                                       
   ./start-dev.sh                                                                                                                                                                                               

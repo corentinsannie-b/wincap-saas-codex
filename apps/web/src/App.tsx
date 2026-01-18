@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { UploadInterface } from './components/UploadInterface';
 import { EnrichedDashboard } from './components/EnrichedDashboard';
 import { ChatInterface } from './components/ChatInterface';
-import { API_BASE_URL } from './services/api';
+import { processFEC } from './services/api';
 
 type AppState = 'upload' | 'processing' | 'dashboard' | 'chat';
 
@@ -32,20 +32,10 @@ export default function App() {
 
     try {
       // Call process endpoint
-      const response = await fetch(`${API_BASE_URL}/api/process`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          session_id: sessionId,
-          company_name: processing?.companyName || 'Company',
-        }),
+      await processFEC({
+        session_id: sessionId,
+        company_name: processing?.companyName || 'Company',
       });
-
-      if (!response.ok) {
-        throw new Error('Processing failed');
-      }
 
       // Show dashboard when processing is complete
       setAppState('dashboard');
